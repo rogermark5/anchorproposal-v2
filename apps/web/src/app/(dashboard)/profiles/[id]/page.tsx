@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { toast } from 'sonner';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
+import { ProfileGenerationSettings } from '@/components/profile-generation-settings';
 import { ArrowLeft, UserRound } from 'lucide-react';
 import {
   ProfileForm,
@@ -25,7 +26,7 @@ function asList(value: unknown): Dict[] {
 
 export default function ProfileDetailPage() {
   const { id } = useParams<{ id: string }>();
-  const { isAdmin } = useAuth();
+  const { isAdmin, canBid } = useAuth();
   const [profile, setProfile] = useState<Dict | null>(null);
   const [form, setForm] = useState<ProfileFormValues>(emptyProfileFormValues());
   const [templates, setTemplates] = useState<TemplateOption[]>([]);
@@ -164,6 +165,7 @@ export default function ProfileDetailPage() {
         <ProfileForm values={form} onChange={setForm} templates={templates} idPrefix="edit" />
       ) : (
         <div className="space-y-5">
+          {canBid && <ProfileGenerationSettings profileId={id} />}
           <section className="bg-white border border-[var(--border)] rounded-xl p-5 sm:p-6">
             <h2 className="text-sm font-semibold text-slate-800 uppercase tracking-wide mb-4">
               Personal information

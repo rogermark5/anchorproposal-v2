@@ -23,6 +23,7 @@ export function ManualGenerationDialog({
   const requestKey = useRef('');
   const [prompt, setPrompt] = useState<ManualGenerationPrompt | null>(null);
   const [responseJson, setResponseJson] = useState('');
+  const [coverLetterResponseJson, setCoverLetterResponseJson] = useState('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -78,6 +79,7 @@ export function ManualGenerationDialog({
     try {
       const generation = await api.importManualGeneration(applicationId, {
         responseJson,
+        coverLetterResponseJson: prompt.coverLetterPrompt ? coverLetterResponseJson : undefined,
         contextHash: prompt.contextHash,
         templateId: prompt.templateId,
         idempotencyKey: requestKey.current,
@@ -115,7 +117,7 @@ export function ManualGenerationDialog({
             Copy the complete prompt into your preferred model. Paste its JSON response below to save the resume and use the usual preview and download options.
           </p>
           <p className="text-xs text-slate-500">For a cover letter, include coverLetter in the same JSON with greeting, paragraphs (an array of paragraph strings), closing, and signatureName. Without it, only the resume is saved. Do not append a separate plain-text letter.</p>
-          {prompt?.experienceTitleMode === 'tailored' && <p className="text-xs text-slate-500">Return summary, skills, experiences, educations, and certificates. Include one experience per saved experience, in the same order, with role and bullets. Copy education and certificates from the expanded prompt as flat arrays, using [] when empty. Saved profile facts are preserved.</p>}
+          {prompt?.experienceTitleMode === 'tailored' && <p className="text-xs text-slate-500">Return summary, experiences, educations, and certificates. Include one experience per saved experience, in the same order, with role and bullets. Copy education and certificates from the expanded prompt as flat arrays, using [] when empty. Saved profile facts are preserved.</p>}
           {loading ? (
             <div role="status" className="flex items-center gap-2 py-8 text-sm text-slate-500">
               <LoadingSpinner /> Preparing the full prompt…
@@ -154,11 +156,18 @@ export function ManualGenerationDialog({
               className="w-full resize-y rounded-lg border border-slate-300 p-3 font-mono text-xs leading-relaxed focus:outline-none focus:ring-2 focus:ring-primary/30 disabled:bg-slate-50" />
           </div>
           {error && <p role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</p>}
+          {prompt?.coverLetterPrompt && <section className="space-y-2">
+            <h3 className="text-sm font-medium">3. Generate the cover letter in a second request</h3>
+            <p className="text-xs text-slate-500">Copy this prompt after pasting the resume response above, then paste the model’s cover-letter JSON below.</p>
+            <textarea readOnly value={`ACCEPTED RESUME RESPONSE\n${responseJson}\n\n${prompt.coverLetterPrompt}`} rows={8} className="w-full rounded-lg border p-3 text-xs font-mono" />
+            <button disabled={!responseJson.trim() || saving} className="rounded-lg border px-3 py-2 text-sm" onClick={async () => { try { await navigator.clipboard.writeText(`ACCEPTED RESUME RESPONSE\n${responseJson}\n\n${prompt.coverLetterPrompt}`); toast.success('Cover letter prompt copied'); } catch { toast.error('Select the prompt text and copy it.'); } }}>Copy cover letter prompt</button>
+            <textarea aria-label="Cover letter JSON response" value={coverLetterResponseJson} disabled={saving} maxLength={80000} onChange={event => setCoverLetterResponseJson(event.target.value)} rows={8} placeholder="Paste cover letter JSON response…" className="w-full rounded-lg border p-3 text-xs font-mono" />
+          </section>}
         </div>
         <div className="flex shrink-0 justify-end gap-3 border-t border-slate-100 px-5 py-4">
           <button type="button" disabled={saving} onClick={onClose}
             className="rounded-lg border border-slate-300 px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-40">Cancel</button>
-          <button type="button" disabled={loading || saving || !prompt || !responseJson.trim()} onClick={() => void save()}
+          <button type="button" disabled={loading || saving || !prompt || !responseJson.trim() || Boolean(prompt.coverLetterPrompt && !coverLetterResponseJson.trim())} onClick={() => void save()}
             className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary-light disabled:opacity-40">
             {saving && <LoadingSpinner size="sm" />}{saving ? 'Validating and saving…' : 'Save resume'}
           </button>

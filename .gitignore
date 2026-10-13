@@ -16,6 +16,7 @@ config.bat
 /tmp/template-qa/
 /tmp/template-typecheck.log
 /tmp/generation-qa/
+/tmp/generation-safety-ui/
 /tmp/settings-qa/
 /tmp/answers-qa/
 /tmp/qa-security/

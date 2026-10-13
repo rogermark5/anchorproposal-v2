@@ -1,4 +1,6 @@
-import { Injectable, NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException, BadRequestException, ConflictException } from '@nestjs/common';
+import { normalizedJobUrl } from './job-url';
+import { bindProfileOutput, hasProfileIdentityConflict, redactPromptMetadata } from '../generations/profile-output';
 import { PrismaService } from '../prisma/prisma.service';
 import { ProfilesService } from '../profiles/profiles.service';
 import { RulesService } from '../rules/rules.service';
@@ -137,7 +139,7 @@ export class ApplicationsService {
         ...rest,
         warnings: this.rulesService.contextualizeWarnings(app.warnings, app),
         latestGenerationId: latest?.id ?? null,
-        latestFiles: latest
+        latestFiles: latest && !hasProfileIdentityConflict(latest.structuredOutputJson as any, latest.profileSnapshotJson)
           ? this.latestFilesFromGeneration(latest.files)
           : {
               resumePdfId: null,
@@ -181,7 +183,7 @@ export class ApplicationsService {
 
     if (!app) throw new NotFoundException('Application not found');
     await this.assertCanAccessApp(app, user);
-    return { ...app, warnings: this.rulesService.contextualizeWarnings(app.warnings, app) };
+    return { ...app, generations: app.generations.map(gen => gen.structuredOutputJson ? { ...redactPromptMetadata(gen), requiresRegeneration: hasProfileIdentityConflict(gen.structuredOutputJson as any, gen.profileSnapshotJson), structuredOutputJson: bindProfileOutput(gen.structuredOutputJson as any, gen.profileSnapshotJson) } : redactPromptMetadata(gen)), warnings: this.rulesService.contextualizeWarnings(app.warnings, app) };
   }
 
   async create(data: Record<string, unknown>, user: AuthUser) {
@@ -196,6 +198,7 @@ export class ApplicationsService {
 
     const profileId = data.profileId as string;
     await this.profilesService.checkAccess(profileId, user);
+    const canonicalUrl = await this.assertUniqueJobLink(profileId, data.jobUrl);
 
     const validation = await this.rulesService.validateApplication({
       jobTitle: data.jobTitle as string,
@@ -217,6 +220,7 @@ export class ApplicationsService {
         workArrangement: (data.workArrangement as WorkArrangement) || WorkArrangement.UNKNOWN,
         source: data.source as string,
         jobUrl: data.jobUrl as string,
+        normalizedJobUrl: canonicalUrl,
         jobDescription: data.jobDescription as string,
         status: ApplicationStatus.SAVED,
         warnings: {
@@ -265,7 +269,9 @@ export class ApplicationsService {
     }
 
     const company = data.company ?? app.company;
+    const canonicalUrl = await this.assertUniqueJobLink(data.profileId ?? app.profileId, data.jobUrl ?? app.jobUrl, id);
     const updateData: Prisma.ApplicationUpdateInput = {
+      ...((data.profileId !== undefined || data.jobUrl !== undefined) ? { normalizedJobUrl: canonicalUrl } : {}),
       ...(data.jobTitle !== undefined ? { jobTitle: data.jobTitle } : {}),
       ...(data.company !== undefined
         ? { company: data.company, normalizedCompany: normalizeCompany(company) }
@@ -314,6 +320,19 @@ export class ApplicationsService {
     await this.storage.deleteResumeTree(id);
     await this.prisma.application.delete({ where: { id } });
     return { ok: true };
+  }
+
+  private async assertUniqueJobLink(profileId: string, value: unknown, excludeId?: string) {
+    const canonical = normalizedJobUrl(value);
+    if (!canonical) return null;
+    const existing = await this.prisma.application.findMany({
+      where: { profileId, jobUrl: { not: null }, ...(excludeId ? { id: { not: excludeId } } : {}) },
+      select: { jobUrl: true },
+    });
+    if (existing.some(app => {
+      try { return normalizedJobUrl(app.jobUrl) === canonical; } catch { return false; }
+    })) throw new ConflictException('This profile already has an application for this job link. Open the existing application instead.');
+    return canonical;
   }
 
   async updateStatus(id: string, status: ApplicationStatus, user: AuthUser, note?: string) {

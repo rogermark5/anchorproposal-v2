@@ -42,7 +42,7 @@ export class AnswersService {
       await this.ensureResumeConversation(generation);
       const turns = await this.listTurns(generation.id);
       if (this.toView(turns).primed) return this.toView(turns);
-      const prompt = await this.settings.getAnswerPrompt();
+      const prompt = await this.settings.getAnswerPrompt(user.id);
       await this.appendExchange(generation.id, turns, prompt, 'answer_prompt', 'answer_ack');
       return this.toView(await this.listTurns(generation.id));
     });
@@ -59,7 +59,7 @@ export class AnswersService {
       await this.ensureResumeConversation(generation);
       let turns = await this.listTurns(generation.id);
       if (!this.toView(turns).primed) {
-        const prompt = await this.settings.getAnswerPrompt();
+        const prompt = await this.settings.getAnswerPrompt(user.id);
         await this.appendExchange(generation.id, turns, prompt, 'answer_prompt', 'answer_ack');
         turns = await this.listTurns(generation.id);
       }
@@ -86,6 +86,7 @@ export class AnswersService {
     if (generation.status !== GenerationStatus.COMPLETED || !generation.structuredOutputJson) {
       throw new BadRequestException('The resume is not ready yet');
     }
+    if (generation.requiresRegeneration) throw new BadRequestException('Generate a new resume version using the saved profile before asking application questions.');
     return generation;
   }
 

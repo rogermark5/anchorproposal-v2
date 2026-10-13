@@ -9,7 +9,7 @@ const js = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarg
 const json = (body, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
 function client(fetch) {
   const storage = new Map([['accessToken', 'old-access'], ['refreshToken', 'old-refresh']]);
-  const context = { exports: {}, process: { env: {} }, fetch, URLSearchParams, window: { location: { href: '' } }, localStorage: {
+  const context = { exports: {}, process: { env: {} }, fetch, structuredClone, URLSearchParams, window: { location: { href: '' } }, localStorage: {
     getItem: (key) => storage.get(key) ?? null,
     setItem: (key, value) => storage.set(key, value),
     removeItem: (key) => storage.delete(key),
@@ -66,4 +66,15 @@ test('a pending refresh cannot restore tokens after logout', async () => {
   const result = assert.rejects(api.getMe(), /Session expired/);
   await entered.promise; api.clearTokens(); release.resolve(); await result;
   assert.equal(api.getAccessToken(), null); assert.equal(storage.size, 0);
+});
+
+test('page requests share in-flight reads and cached results are invalidated after edits and logout', async () => {
+  let reads = 0;
+  const { api } = client(async (_url, init) => { if (!init.method || init.method === 'GET') reads++; return json([{ id: 'profile' }]); });
+  await Promise.all([api.getProfiles(), api.getProfiles(), api.getProfiles()]);
+  assert.equal(reads, 1);
+  await api.getProfiles(); assert.equal(reads, 1);
+  await api.updateProfile('profile', { firstName: 'Changed' });
+  await api.getProfiles(); assert.equal(reads, 2);
+  api.clearTokens(); await api.getProfiles(); assert.equal(reads, 3);
 });

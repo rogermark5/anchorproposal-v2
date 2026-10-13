@@ -11,6 +11,7 @@ export const promptContactSchema = z.object({
   email: z.string().optional(),
   phone: z.string().optional(),
   linkedin: z.string().optional(),
+  links: z.array(z.object({ type: z.string(), url: z.string() })).optional(),
 });
 
 /** Flexible experience row matching prompt / profile field names. */

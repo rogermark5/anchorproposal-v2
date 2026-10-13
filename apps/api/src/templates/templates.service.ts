@@ -20,6 +20,7 @@ import {
 import { AuthUser } from '../common/types/auth.types';
 import { isStaff } from '../common/utils/roles.util';
 import { UserRole } from '@prisma/client';
+import { resumeHeadline } from '../common/utils/resume-headline';
 
 export type PreviewContent = PromptResumeContent;
 
@@ -100,10 +101,11 @@ export class TemplatesService {
       const defaultById = new Map(
         assignments.map((a) => [a.templateVersionId, a.isDefault] as const),
       );
-      return templates.map((t) => ({
+      return Promise.all(templates.map(async (t) => ({
         ...t,
+        ...await this.personalConfig(t, user),
         isDefault: defaultById.get(t.id) === true,
-      }));
+      })));
     }
 
     const assignments = await this.prisma.templateAssignment.findMany({
@@ -113,13 +115,14 @@ export class TemplatesService {
       },
     });
 
-    return assignments
+    const list = assignments
       .filter((a) => a.templateVersion.isPublished && !a.templateVersion.archivedAt)
       .map((a) => ({
         ...a.templateVersion,
         isDefault: a.isDefault,
       }))
       .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+    return Promise.all(list.map(async template => ({ ...template, ...await this.personalConfig(template, user) })));
   }
 
   /** @deprecated Prefer findAllForUser */
@@ -138,7 +141,7 @@ export class TemplatesService {
     if (!template || template.archivedAt) {
       throw new NotFoundException('Template not found');
     }
-    if (isStaff(user.role)) return template;
+    if (isStaff(user.role)) return this.personalConfig(template, user);
 
     if (!template.isPublished) {
       throw new ForbiddenException('Bidders may only use published templates');
@@ -149,7 +152,25 @@ export class TemplatesService {
     if (!assignment) {
       throw new ForbiddenException('Template is not assigned to you');
     }
-    return template;
+    return this.personalConfig(template, user);
+  }
+
+  private async personalConfig<T extends { id: string; name: string; configJson: unknown }>(template: T, user: AuthUser) {
+    const custom = await this.prisma.userTemplateCustomization.findUnique({ where: { userId_templateVersionId: { userId: user.id, templateVersionId: template.id } } });
+    return { ...template, ...(custom ? { name: custom.name || template.name, configJson: custom.configJson } : {}), customized: Boolean(custom) };
+  }
+
+  async customize(id: string, user: AuthUser, data: { name?: string; configJson?: object }) {
+    const template = await this.checkAccess(id, user);
+    if (!template.isPublished) throw new BadRequestException('Choose a published default template before customizing it.');
+    const configJson = templateConfigSchema.parse(data.configJson ?? template.configJson);
+    const name = data.name?.trim() || template.name;
+    await this.prisma.userTemplateCustomization.upsert({
+      where: { userId_templateVersionId: { userId: user.id, templateVersionId: id } },
+      create: { userId: user.id, templateVersionId: id, name, configJson }, update: { name, configJson },
+    });
+    await this.setDefaultTemplate(id, user);
+    return this.checkAccess(id, user);
   }
 
   async resolveDefaultTemplateId(user: AuthUser): Promise<string | undefined> {
@@ -177,9 +198,7 @@ export class TemplatesService {
   }
 
   async setDefaultTemplate(templateVersionId: string, user: AuthUser) {
-    const template = await this.prisma.templateVersion.findUnique({
-      where: { id: templateVersionId },
-    });
+    const template = await this.checkAccess(templateVersionId, user);
     if (!template || template.archivedAt) {
       throw new NotFoundException('Template not found');
     }
@@ -349,8 +368,7 @@ export class TemplatesService {
         ? `li::before { content: "–"; position: absolute; left: 0; color: ${heading}; } li { position: relative; padding-left: 12px; }`
         : '';
 
-    const rule = cfg.styles.showDividers && sectionHeadingStyle === 'underline'
-      ? '<div class="full-rule"></div>' : '';
+    const rule = '';
     let h2Extra = '';
     if (sectionHeadingStyle === 'background') {
       h2Extra = `
@@ -360,7 +378,7 @@ export class TemplatesService {
       `;
     } else if (sectionHeadingStyle === 'bar') {
       h2Extra = `
-        border-left: 4px solid ${accent};
+        border: 0;
         padding-left: 10px;
         color: ${sectionLabelText || heading};
       `;
@@ -448,13 +466,14 @@ export class TemplatesService {
     const contactFont = cfg.typography.contactSize ?? Math.max(8, fontSize - 1.5);
     const subtextFont = cfg.typography.subtextSize ?? Math.max(8, fontSize - 1);
     const contact = c.contact || { name: 'Candidate' };
-    const headline = c.experiences?.length ? experienceTitle(c.experiences[0]) : contact.title ? String(contact.title) : '';
+    const headline = resumeHeadline(c.experiences, contact.title) || '';
     const separator = contactSeparator || '·';
     const contactParts = [
       contactCfg.showLocation !== false ? contact.address : '',
       contactCfg.showEmail !== false ? contact.email : '',
       contactCfg.showPhone !== false ? contact.phone : '',
       contactCfg.showLinkedin !== false ? contact.linkedin : '',
+      ...(contact.links || []).filter(link => link.url !== contact.linkedin).map(link => link.url),
     ]
       .filter(Boolean)
       .map((part) => this.esc(part));
@@ -510,7 +529,7 @@ export class TemplatesService {
         .page-frame { position: fixed; inset: 0; }
         .sheet { padding: 16px; box-decoration-break: clone; -webkit-box-decoration-break: clone; }
       }
-      .page-frame { border: 1px solid ${divider}; pointer-events: none; }
+      .page-frame { display: none; }
       .page.accent-side::before {
         content: "";
         position: absolute;
@@ -549,14 +568,14 @@ export class TemplatesService {
         width: 100%;
         height: 0;
         border: 0;
-        border-top: 1px solid ${divider};
+        border-top: 0;
         margin: 0 0 10px;
         clear: both;
         break-after: avoid;
       }
       .header-rule { margin: 0 0 ${sectionSpacing}px; }
       .page.accent-top-rule .header-rule {
-        border-top: 2px solid ${accent};
+        border-top: 0;
       }
       h1 {
         font-family: ${headingStack};

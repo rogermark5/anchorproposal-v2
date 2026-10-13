@@ -3,6 +3,7 @@ import { BullModule } from '@nestjs/bullmq';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { GenerationsService } from './generations.service';
 import { GenerationsController } from './generations.controller';
+import { PublicResumeController } from './public-resume.controller';
 import { GenerationProcessor } from './generation.processor';
 import { AnswersService } from './answers.service';
 import { ProfilesModule } from '../profiles/profiles.module';
@@ -28,7 +29,7 @@ import { StorageService } from '../storage/storage.service';
     SettingsModule,
     TemplatesModule,
   ],
-  controllers: [GenerationsController],
+  controllers: [GenerationsController, PublicResumeController],
   providers: [
     GenerationsService,
     AnswersService,

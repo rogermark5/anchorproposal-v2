@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useRef, useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
@@ -146,11 +146,13 @@ export default function UsersPage() {
   const [removing, setRemoving] = useState(false);
   const [statusBusyId, setStatusBusyId] = useState<string | null>(null);
 
+  const loadedOnce = useRef(false);
   const load = useCallback(async () => {
-    setLoading(true);
+    if (!loadedOnce.current) setLoading(true);
     try {
       const data = (await api.getUsers()) as ManagedUser[];
       setUsers(data);
+      loadedOnce.current = true;
       setDetailUser((prev) => (prev ? data.find((u) => u.id === prev.id) || null : null));
       setEditUser((prev) => (prev ? data.find((u) => u.id === prev.id) || null : null));
       setPromptUser((prev) => (prev ? data.find((u) => u.id === prev.id) || null : null));
@@ -650,15 +652,6 @@ export default function UsersPage() {
                               </button>
                               <button
                                 type="button"
-                                title="Assign prompts"
-                                disabled={!manageable}
-                                onClick={() => openPromptAssign(u)}
-                                className="p-2 rounded-lg text-slate-500 hover:text-[var(--primary)] hover:bg-slate-100 disabled:opacity-30 disabled:pointer-events-none"
-                              >
-                                <FileText className="w-4 h-4" />
-                              </button>
-                              <button
-                                type="button"
                                 title="Assign templates"
                                 disabled={!manageable}
                                 onClick={() => setTemplateUser(u)}
@@ -1040,76 +1033,7 @@ export default function UsersPage() {
                   )}
                 </div>
 
-                <div className="space-y-3 pt-2 border-t border-slate-100">
-                  <p className="text-xs font-medium text-slate-500 uppercase tracking-wide">
-                    Assigned prompts
-                  </p>
-                  {(detailUser.promptAssignments || []).length === 0 ? (
-                    <p className="text-sm text-slate-400">
-                      No prompts assigned. The initial prompt is used until you add one.
-                    </p>
-                  ) : (
-                    <div className="space-y-2">
-                      {(detailUser.promptAssignments || []).map((a) => (
-                        <div
-                          key={a.promptVersionId}
-                          className="flex items-center justify-between gap-2 p-3 bg-slate-50 rounded-lg"
-                        >
-                          <p className="text-sm font-medium text-slate-800 truncate">
-                            {a.promptVersion.name}
-                          </p>
-                          <div className="flex items-center gap-2 shrink-0">
-                            {a.isDefault ? (
-                              <span className="text-xs bg-primary/10 text-primary px-2 py-1 rounded">
-                                Default
-                              </span>
-                            ) : (
-                              <button
-                                type="button"
-                                onClick={() => handleSetDefaultPrompt(detailUser, a.promptVersionId)}
-                                className="text-xs text-slate-500 hover:text-primary"
-                              >
-                                Set Default
-                              </button>
-                            )}
-                            {canManage(detailUser) && (
-                              <button
-                                type="button"
-                                onClick={() => handleUnassignPrompt(detailUser, a.promptVersionId)}
-                                className="text-xs text-red-600 hover:underline"
-                              >
-                                Remove
-                              </button>
-                            )}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                  {canManage(detailUser) && (
-                    <select
-                      onChange={(e) => {
-                        if (e.target.value) handleAssignPrompt(detailUser, e.target.value);
-                        e.target.value = '';
-                      }}
-                      className="w-full px-3 py-2 border border-[var(--border)] rounded-lg text-sm"
-                    >
-                      <option value="">Add prompt…</option>
-                      {promptLibrary
-                        .filter(
-                          (p) =>
-                            !(detailUser.promptAssignments || []).find(
-                              (a) => a.promptVersionId === p.id,
-                            ),
-                        )
-                        .map((p) => (
-                          <option key={p.id} value={p.id}>
-                            {promptLabel(p)}
-                          </option>
-                        ))}
-                    </select>
-                  )}
-                </div>
+                <p className="border-t border-slate-100 pt-4 text-sm text-slate-500">Prompts are private. Each user manages their own resume and cover-letter instructions in Settings.</p>
               </>
             )}
 
@@ -1235,116 +1159,6 @@ export default function UsersPage() {
         </div>
       )}
 
-      {/* Assign prompts */}
-      {isAdmin && promptUser && (
-        <div
-          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4"
-          onClick={() => !savingPrompt && setPromptUser(null)}
-          role="presentation"
-        >
-          <div
-            role="dialog"
-            aria-modal
-            className="bg-white rounded-xl w-full max-w-lg max-h-[90vh] overflow-y-auto p-6 shadow-xl border border-[var(--border)] space-y-4"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between">
-              <div>
-                <h2 className="text-lg font-semibold text-slate-800">Assign prompts</h2>
-                <p className="text-sm text-slate-500 mt-0.5">
-                  {promptUser.firstName} {promptUser.lastName}
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setPromptUser(null)}
-                disabled={savingPrompt}
-                className="p-1 rounded-lg text-slate-400 hover:bg-slate-100 disabled:opacity-50"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <p className="text-xs text-slate-400">
-              Choose prompts from the library. The default prompt is used when assignment is one prompt
-              per bidder. Bidders cannot add prompts.
-            </p>
-
-            {(promptUser.promptAssignments || []).length === 0 ? (
-              <p className="text-sm text-slate-400">No prompts assigned yet.</p>
-            ) : (
-              <div className="space-y-2">
-                {(promptUser.promptAssignments || []).map((a) => (
-                  <div
-                    key={a.promptVersionId}
-                    className="flex items-center justify-between gap-2 p-3 bg-slate-50 rounded-lg"
-                  >
-                    <p className="text-sm font-medium text-slate-800 truncate">{a.promptVersion.name}</p>
-                    <div className="flex items-center gap-2 shrink-0">
-                      {a.isDefault ? (
-                        <span className="text-xs bg-primary/10 text-primary px-2 py-1 rounded">Default</span>
-                      ) : (
-                        <button
-                          type="button"
-                          disabled={savingPrompt}
-                          onClick={() => handleSetDefaultPrompt(promptUser, a.promptVersionId)}
-                          className="text-xs text-slate-500 hover:text-primary disabled:opacity-50"
-                        >
-                          Set Default
-                        </button>
-                      )}
-                      <button
-                        type="button"
-                        disabled={savingPrompt}
-                        onClick={() => handleUnassignPrompt(promptUser, a.promptVersionId)}
-                        className="text-xs text-red-600 hover:underline disabled:opacity-50"
-                      >
-                        Remove
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            <div>
-              <label className="block text-xs font-medium text-slate-500 mb-1.5">Add prompt</label>
-              <select
-                disabled={savingPrompt}
-                onChange={(e) => {
-                  if (e.target.value) handleAssignPrompt(promptUser, e.target.value);
-                  e.target.value = '';
-                }}
-                className="w-full px-3 py-2 border border-[var(--border)] rounded-lg text-sm"
-                defaultValue=""
-              >
-                <option value="">Select a prompt…</option>
-                {promptLibrary
-                  .filter(
-                    (p) =>
-                      !(promptUser.promptAssignments || []).find((a) => a.promptVersionId === p.id),
-                  )
-                  .map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {promptLabel(p)}
-                    </option>
-                  ))}
-              </select>
-            </div>
-
-            <div className="flex justify-end pt-2">
-              <button
-                type="button"
-                onClick={() => setPromptUser(null)}
-                disabled={savingPrompt}
-                className="px-4 py-2.5 border border-[var(--border)] rounded-lg text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
-              >
-                Done
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Assign templates */}
       {isAdmin && templateUser && (

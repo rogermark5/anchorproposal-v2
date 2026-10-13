@@ -36,7 +36,7 @@ function fixture(role = 'ADMIN') {
     prisma,
     { checkAccess: async () => {}, findOne: async () => ({ firstName: 'QA' }), buildProfileSnapshot: (p) => p },
     { canGenerate: () => ({ allowed: true }) }, settings,
-    { resolveDefaultTemplateId: async () => 'qa-template' }, {},
+    { resolveDefaultTemplateId: async () => 'qa-template', checkAccess: async () => ({ configJson: {} }) }, {},
     { add: async (name, data) => { queued.push({ name, data }); } }, deepseek,
   );
   return { values, actor, saved, queued, settings, deepseek, generations, get prepared() { return prepared; } };

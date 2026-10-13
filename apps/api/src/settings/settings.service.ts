@@ -6,7 +6,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuthUser } from '../common/types/auth.types';
-import { isAdmin, isMaster } from '../common/utils/roles.util';
+import { appendJsonRules, jsonOutputRules, promptInstructions, parseDocumentKind, type DocumentKind } from '../deepseek/json-rules';
 import { DEFAULT_PROMPT } from '@anchorproposal/shared';
 import { parseExperienceTitleMode, type ExperienceTitleMode } from '../generations/experience-title-mode';
 
@@ -25,564 +25,171 @@ export class SettingsService {
     'Reply to this message with only the single word: yes',
   ].join('\n');
 
-  /** Shared initial prompt, with the bundled default for databases that have none. */
-  async getMasterPublishedPrompt() {
-    const published = await this.prisma.promptVersion.findMany({
-      where: { ownerId: null, isPublished: true, isPersonalDefault: false },
-      orderBy: [{ isInitial: 'desc' }, { publishedAt: 'desc' }],
-    });
-    const shared = published.find((prompt) => prompt.content.trim());
-    if (shared) return shared;
 
-    // Persist it because resume generations reference a real prompt version. A fixed
-    // ID makes simultaneous first loads idempotent; never overwrite an existing edit.
-    const fallback = await this.prisma.promptVersion.upsert({
-      where: { id: SettingsService.BUILTIN_DEFAULT_PROMPT_ID },
-      update: {},
-      create: {
-        id: SettingsService.BUILTIN_DEFAULT_PROMPT_ID,
-        name: 'Default resume prompt', content: DEFAULT_PROMPT,
-        ownerId: null, isInitial: true, isPublished: true, publishedAt: new Date(),
-      },
-    });
-    return fallback.ownerId === null && fallback.isPublished && !fallback.isPersonalDefault && fallback.content.trim()
-      ? fallback : null;
+  private promptSelect = {
+    id: true, name: true, content: true, version: true, isPublished: true,
+    isInitial: true, isPersonalDefault: true, documentKind: true,
+    experienceTitleMode: true, ownerId: true,
+  } as const;
+
+  async getPromptAssignmentMode(user?: { id: string; role: string }): Promise<'user' | 'profile' | 'separate'> {
+    if (!user) return 'profile';
+    const saved = await this.prisma.user.findUnique({ where: { id: user.id } });
+    return saved?.generationPromptMode === 'user' ? 'user' : saved?.generationPromptMode === 'separate' ? 'separate' : 'profile';
   }
 
-  async getPromptAssignmentMode(user?: { id: string; role: string }): Promise<'user' | 'profile'> {
-    // This choice affects the admin's own generations, not other admins or assigned bidders.
-    if (!user || !isAdmin(user.role)) return 'profile';
-    const admin = await this.prisma.user.findUnique({ where: { id: user.id } });
-    return admin?.generationPromptMode === 'user' ? 'user' : 'profile';
-  }
-
-  async setPromptAssignmentMode(user: AuthUser, mode: 'user' | 'profile') {
-    if (!isAdmin(user.role)) throw new ForbiddenException('Only admins can change their generation prompt');
-    if (mode !== 'user' && mode !== 'profile') {
-      throw new BadRequestException('Prompt mode must be user or profile');
-    }
-    await this.prisma.user.update({
-      where: { id: user.id },
-      data: { generationPromptMode: mode },
-    });
+  async setPromptAssignmentMode(user: AuthUser, mode: 'user' | 'profile' | 'separate') {
+    if (!['user', 'profile', 'separate'].includes(mode)) throw new BadRequestException('Choose one of the three generation ways.');
+    await this.prisma.user.update({ where: { id: user.id }, data: { generationPromptMode: mode } });
     return { mode };
   }
 
-  /** @deprecated Prefer resolvePromptForUser — kept for callers expecting global publish. */
-  async getPublishedPrompt() {
-    return this.getMasterPublishedPrompt();
-  }
-
-  async getMasterPrompts() {
-    return this.prisma.promptVersion.findMany({
-      where: { ownerId: null, archivedAt: null },
-      orderBy: { version: 'desc' },
+  /** A default is always a real prompt record owned only by this user. */
+  async resolvePromptForUser(user: { id: string; role: string }, _options?: { profileId?: string }) {
+    return this.prisma.$transaction(async tx => {
+      await tx.$queryRaw`SELECT id FROM users WHERE id = ${user.id} FOR UPDATE`;
+      const saved = await tx.user.findUnique({ where: { id: user.id } });
+      if (!saved) throw new NotFoundException('User not found');
+      const selected = saved.selectedPromptId ? await tx.promptVersion.findFirst({ where: { id: saved.selectedPromptId, ownerId: user.id, isPublished: true, archivedAt: null } }) : null;
+      if (selected) return selected;
+      const prompt = await tx.promptVersion.upsert({
+        where: { ownerId_sourcePromptId: { ownerId: user.id, sourcePromptId: 'builtin-personal-default' } }, update: {},
+        create: { ownerId: user.id, sourcePromptId: 'builtin-personal-default', name: 'My all-profile prompt',
+          content: appendJsonRules(DEFAULT_PROMPT), isPersonalDefault: true, isPublished: true, publishedAt: new Date(), documentKind: 'combined' },
+      });
+      const active = prompt.archivedAt ? await tx.promptVersion.update({ where: { id: prompt.id }, data: { archivedAt: null, isPublished: true } }) : prompt;
+      await tx.user.update({ where: { id: user.id }, data: { selectedPromptId: active.id, useMasterPrompt: false } });
+      return active;
     });
   }
 
-  async createMasterPrompt(content: string, name?: string, requestedMode?: ExperienceTitleMode) {
-    const experienceTitleMode = parseExperienceTitleMode(requestedMode);
-    if (!content?.trim()) throw new BadRequestException('Prompt content is required');
-    const latest = await this.prisma.promptVersion.findFirst({
-      where: { ownerId: null },
-      orderBy: { version: 'desc' },
-    });
-    const hasInitial = await this.prisma.promptVersion.findFirst({
-      where: { ownerId: null, isInitial: true },
-      select: { id: true },
-    });
-    if (!hasInitial && experienceTitleMode !== 'saved') throw new BadRequestException('The default prompt must use fixed profile positions.');
-    return this.prisma.promptVersion.create({
-      data: {
-        experienceTitleMode,
-        name: name?.trim() || `Prompt ${(latest?.version || 0) + 1}`,
-        content: content.trim(),
-        version: (latest?.version || 0) + 1,
-        ownerId: null,
-        isPublished: true,
-        isInitial: !hasInitial,
-        publishedAt: new Date(),
-      },
-    });
-  }
-
-  /** Marks a master prompt as the initial fallback without hiding the others. */
-  async publishMasterPrompt(id: string) {
-    const prompt = await this.prisma.promptVersion.findUnique({ where: { id } });
-    if (!prompt || prompt.archivedAt || prompt.ownerId !== null) {
-      throw new NotFoundException('Master prompt not found');
-    }
-    await this.prisma.promptVersion.updateMany({
-      where: { ownerId: null },
-      data: { isInitial: false },
-    });
-    return this.prisma.promptVersion.update({
-      where: { id },
-      data: { isPublished: true, isInitial: true, experienceTitleMode: 'saved', publishedAt: prompt.publishedAt ?? new Date() },
-    });
-  }
-
-  async updateMasterPrompt(id: string, content: string, name?: string) {
-    if (!content?.trim()) throw new BadRequestException('Prompt content is required');
-    const prompt = await this.prisma.promptVersion.findUnique({ where: { id } });
-    if (!prompt || prompt.archivedAt || prompt.ownerId !== null) {
-      throw new NotFoundException('Master prompt not found');
-    }
-    return this.prisma.promptVersion.update({
-      where: { id },
-      data: {
-        content: content.trim(),
-        ...(name?.trim() ? { name: name.trim() } : {}),
-      },
-    });
-  }
-
-  async deleteMasterPrompt(id: string) {
-    const prompt = await this.prisma.promptVersion.findUnique({ where: { id } });
-    if (!prompt || prompt.archivedAt || prompt.ownerId !== null) {
-      throw new NotFoundException('Master prompt not found');
-    }
-    await this.deletePromptRecord(id);
-    return { success: true, id };
-  }
-
-  private promptSelect = {
-    id: true,
-    name: true,
-    content: true,
-    version: true,
-    isPublished: true,
-    isInitial: true,
-    experienceTitleMode: true,
-    ownerId: true,
-    owner: { select: { id: true, firstName: true, lastName: true, role: true } },
-  } as const;
-
-  /** Prompts this staff user can edit. Bidders cannot add prompts. */
   async listManagedPrompts(actor: AuthUser) {
-    if (!isMaster(actor.role) && !isAdmin(actor.role)) {
-      throw new ForbiddenException('Only admins and master can manage prompts');
-    }
-    return this.prisma.promptVersion.findMany({
-      where: { ...(isMaster(actor.role) ? { ownerId: null } : { ownerId: actor.id }), isPersonalDefault: false, archivedAt: null },
-      orderBy: [{ isInitial: 'desc' }, { updatedAt: 'desc' }],
-      select: this.promptSelect,
-    });
+    return this.prisma.promptVersion.findMany({ where: { ownerId: actor.id, isPersonalDefault: false, archivedAt: null }, orderBy: { updatedAt: 'desc' }, select: this.promptSelect });
   }
 
-  /** Prompts that can be assigned to a bidder. */
   async listAssignablePrompts(actor: AuthUser) {
-    if (!isMaster(actor.role) && !isAdmin(actor.role)) {
-      throw new ForbiddenException('Only admins and master can assign prompts');
-    }
-    return this.prisma.promptVersion.findMany({
-      where: isMaster(actor.role)
-        ? {
-            isPublished: true,
-            isPersonalDefault: false,
-            archivedAt: null,
-            OR: [{ ownerId: null }, { owner: { role: 'ADMIN' } }],
-          }
-        : {
-            isPublished: true,
-            isPersonalDefault: false,
-            archivedAt: null,
-            OR: [{ ownerId: null }, { ownerId: actor.id }],
-          },
-      orderBy: [{ isInitial: 'desc' }, { name: 'asc' }],
-      select: this.promptSelect,
-    });
+    return this.prisma.promptVersion.findMany({ where: { ownerId: actor.id, isPublished: true, isPersonalDefault: false, archivedAt: null }, orderBy: { name: 'asc' }, select: this.promptSelect });
   }
 
   async assertAssignablePrompts(actor: AuthUser, ids: string[]) {
-    if (ids.length === 0) return;
-    const allowed = await this.listAssignablePrompts(actor);
-    const allowedIds = new Set(allowed.map((p) => p.id));
-    if (ids.some((id) => !allowedIds.has(id))) {
-      throw new BadRequestException('One or more prompts cannot be assigned');
-    }
+    for (const id of [...new Set(ids)]) await this.usablePersonalPrompt(id, actor.id);
   }
 
-  async createLibraryPrompt(actor: AuthUser, data: { name: string; content: string; experienceTitleMode?: ExperienceTitleMode }) {
+  async createLibraryPrompt(actor: AuthUser, data: { name: string; content: string; experienceTitleMode?: ExperienceTitleMode; documentKind?: DocumentKind }) {
+    const name = data.name?.trim(); const instructions = typeof data.content === 'string' ? promptInstructions(data.content) : '';
+    if (!name || name.length > 200) throw new BadRequestException('Enter a prompt name (up to 200 characters).');
+    if (!instructions || instructions.length > 80000) throw new BadRequestException('Enter prompt instructions (up to 80,000 characters).');
     const experienceTitleMode = parseExperienceTitleMode(data.experienceTitleMode);
-    const name = data.name?.trim();
-    const content = data.content?.trim();
-    if (!name) throw new BadRequestException('Prompt name is required');
-    if (!content) throw new BadRequestException('Prompt content is required');
-    if (isMaster(actor.role)) {
-      return this.createMasterPrompt(content, name, experienceTitleMode);
-    }
-    if (!isAdmin(actor.role)) {
-      throw new ForbiddenException('Bidders cannot add prompts');
-    }
-    const latest = await this.prisma.promptVersion.findFirst({
-      where: { ownerId: actor.id },
-      orderBy: { version: 'desc' },
-    });
-    return this.prisma.promptVersion.create({
-      data: {
-        name,
-        content,
-        experienceTitleMode,
-        version: (latest?.version || 0) + 1,
-        ownerId: actor.id,
-        isPublished: true,
-        publishedAt: new Date(),
-      },
-      select: this.promptSelect,
-    });
+    let documentKind: DocumentKind;
+    try { documentKind = parseDocumentKind(data.documentKind); } catch (error) { throw new BadRequestException((error as Error).message); }
+    const latest = await this.prisma.promptVersion.findFirst({ where: { ownerId: actor.id }, orderBy: { version: 'desc' } });
+    return this.prisma.promptVersion.create({ data: { ownerId: actor.id, name, documentKind, experienceTitleMode,
+      content: appendJsonRules(instructions, documentKind, experienceTitleMode), version: (latest?.version || 0) + 1,
+      isPublished: true, publishedAt: new Date() }, select: this.promptSelect });
   }
 
-  async updateLibraryPrompt(
-    actor: AuthUser,
-    id: string,
-    data: { name?: string; content?: string; experienceTitleMode?: ExperienceTitleMode },
-  ) {
-    const prompt = await this.prisma.promptVersion.findUnique({ where: { id } });
-    if (!prompt || prompt.archivedAt) throw new NotFoundException('Prompt not found');
-    this.assertCanEditPrompt(actor, prompt.ownerId);
-    const experienceTitleMode = data.experienceTitleMode === undefined ? parseExperienceTitleMode(prompt.experienceTitleMode) : parseExperienceTitleMode(data.experienceTitleMode);
-    if ((prompt.isInitial || prompt.isPersonalDefault) && experienceTitleMode !== 'saved') {
-      throw new BadRequestException('Default prompts must use fixed profile positions.');
-    }
-    const name = data.name?.trim();
-    const content = data.content?.trim();
-    if (data.content !== undefined && !content) {
-      throw new BadRequestException('Prompt content is required');
-    }
-    if (data.name !== undefined && !name) {
-      throw new BadRequestException('Prompt name is required');
-    }
-    return this.prisma.promptVersion.update({
-      where: { id },
-      data: {
-        experienceTitleMode,
-        ...(name ? { name } : {}),
-        ...(content ? { content } : {}),
-      },
-      select: this.promptSelect,
-    });
+  async updateLibraryPrompt(actor: AuthUser, id: string, data: { name?: string; content?: string; experienceTitleMode?: ExperienceTitleMode; documentKind?: DocumentKind }) {
+    const prompt = await this.usablePersonalPrompt(id, actor.id);
+    const instructions = promptInstructions(data.content ?? prompt.content);
+    const name = (data.name ?? prompt.name).trim();
+    if (!name || name.length > 200 || !instructions || instructions.length > 80000) throw new BadRequestException('Enter a prompt name and non-empty instructions.');
+    const experienceTitleMode = parseExperienceTitleMode(data.experienceTitleMode ?? prompt.experienceTitleMode);
+    if (prompt.isPersonalDefault && experienceTitleMode !== 'saved') throw new BadRequestException('The all-profile prompt uses saved positions.');
+    let documentKind: DocumentKind;
+    try { documentKind = parseDocumentKind(data.documentKind ?? prompt.documentKind); } catch (error) { throw new BadRequestException((error as Error).message); }
+    return this.prisma.promptVersion.update({ where: { id }, data: { name, documentKind, experienceTitleMode, content: appendJsonRules(instructions, documentKind, experienceTitleMode) }, select: this.promptSelect });
   }
 
   async deleteLibraryPrompt(actor: AuthUser, id: string) {
-    const prompt = await this.prisma.promptVersion.findUnique({ where: { id } });
-    if (!prompt || prompt.archivedAt) throw new NotFoundException('Prompt not found');
-    this.assertCanEditPrompt(actor, prompt.ownerId);
-    await this.deletePromptRecord(id);
+    await this.usablePersonalPrompt(id, actor.id);
+    await this.prisma.$transaction(async tx => {
+      await tx.promptVersion.update({ where: { id }, data: { archivedAt: new Date(), isPublished: false } });
+      await tx.profileGenerationPreference.updateMany({ where: { userId: actor.id, resumePromptId: id }, data: { resumePromptId: null } });
+      await tx.profileGenerationPreference.updateMany({ where: { userId: actor.id, coverLetterPromptId: id }, data: { coverLetterPromptId: null } });
+      await tx.user.updateMany({ where: { id: actor.id, selectedPromptId: id }, data: { selectedPromptId: null } });
+    });
     return { success: true, id };
   }
 
-  private assertCanEditPrompt(actor: AuthUser, ownerId: string | null) {
-    if (isMaster(actor.role)) {
-      if (ownerId !== null) {
-        throw new ForbiddenException('Master edits the shared prompt library from Settings');
-      }
-      return;
-    }
-    if (isAdmin(actor.role) && ownerId === actor.id) return;
-    throw new ForbiddenException('You can only edit your own prompts');
+  async publishOwnPrompt(actor: AuthUser, id: string) {
+    const prompt = await this.prisma.promptVersion.findFirst({ where: { id, ownerId: actor.id, archivedAt: null } });
+    if (!prompt) throw new NotFoundException('Your prompt was not found');
+    return this.prisma.promptVersion.update({ where: { id }, data: { isPublished: true, publishedAt: new Date() } });
   }
 
-  private async deletePromptRecord(id: string) {
-    // Keep the referenced prompt for existing resume versions and queued jobs.
-    // Removing it from the library also removes active assignments, just as a
-    // physical delete would, without deleting any generated resumes.
-    await this.prisma.$transaction(async (tx) => {
-      const assignedUsers = await tx.promptAssignment.findMany({ where: { promptVersionId: id }, select: { userId: true } });
-      await tx.promptVersion.update({ where: { id }, data: { archivedAt: new Date(), isPublished: false, isInitial: false } });
-      await tx.promptAssignment.deleteMany({ where: { promptVersionId: id } });
-      await tx.profilePromptAssignment.deleteMany({ where: { promptVersionId: id } });
-      await tx.profile.updateMany({ where: { promptVersionId: id }, data: { promptVersionId: null } });
-      await tx.user.updateMany({ where: { selectedPromptId: id }, data: { selectedPromptId: null, useMasterPrompt: true } });
-      // Removing a bidder's final assignment must leave a usable default.
-      await tx.user.updateMany({
-        where: {
-          id: { in: assignedUsers.map(row => row.userId) },
-          role: 'BIDDER',
-          useMasterPrompt: false,
-          promptAssignments: { none: { promptVersion: { archivedAt: null } } },
-          ownedPrompts: { none: { isPublished: true, archivedAt: null } },
-        },
-        data: { useMasterPrompt: true },
-      });
-    });
+  private async usablePersonalPrompt(id: string, userId: string) {
+    const prompt = await this.prisma.promptVersion.findFirst({ where: { id, ownerId: userId, isPublished: true, archivedAt: null } });
+    if (!prompt) throw new BadRequestException('Choose an active prompt from your own prompt library.');
+    return prompt;
   }
 
-  private async getAdminPublishedPrompt(adminId: string) {
-    return this.prisma.promptVersion.findFirst({
-      where: { isPublished: true, ownerId: adminId },
-      orderBy: { publishedAt: 'desc' },
-    });
-  }
-
-  private async getBidderPublishedPrompt(bidderId: string) {
-    return this.prisma.promptVersion.findFirst({
-      where: { isPublished: true, ownerId: bidderId },
-      orderBy: { publishedAt: 'desc' },
-    });
-  }
-
-  /**
-   * Prompt assigned to this user for a profile, or the prompt assigned to the profile itself.
-   */
-  private async findProfileAssignedPrompt(userId: string, profileId: string) {
-    const [override, profile] = await Promise.all([
-      this.prisma.profilePromptAssignment.findUnique({
-        where: { profileId_userId: { profileId, userId } },
-        include: { promptVersion: true },
-      }),
-      this.prisma.profile.findUnique({
-        where: { id: profileId },
-        include: { assignedPrompt: true },
-      }),
-    ]);
-    return {
-      profile,
-      prompt: (override?.promptVersion && !override.promptVersion.archivedAt ? override.promptVersion : null)
-        ?? (profile?.assignedPrompt && !profile.assignedPrompt.archivedAt ? profile.assignedPrompt : null),
-    };
-  }
-
-  /**
-   * Generation uses the profile's assigned prompt when one exists.
-   * Otherwise it uses the bidder or admin default prompt.
-   */
-  async resolveGenerationPrompt(
-    user: AuthUser | { id: string; role: string },
-    profileId: string,
-  ) {
-    const { profile, prompt: assigned } = await this.findProfileAssignedPrompt(user.id, profileId);
+  async resolveGenerationPrompt(user: { id: string; role: string }, profileId: string) {
+    const profile = await this.prisma.profile.findUnique({ where: { id: profileId } });
     if (!profile) throw new NotFoundException('Profile not found');
-    const profileName = `${profile.firstName} ${profile.lastName}`.trim();
+    const profileName = [profile.firstName, profile.lastName].join(' ').trim();
     const mode = await this.getPromptAssignmentMode(user);
-    if (mode === 'profile' && assigned && !assigned.isPersonalDefault) {
-      return {
-        usedDefault: false as const,
-        experienceTitleMode: assigned.isInitial ? 'saved' as const : parseExperienceTitleMode(assigned.experienceTitleMode),
-        promptName: assigned.name,
-        profileName,
-        prompt: assigned,
-      };
+    if (mode === 'user') {
+      const prompt = await this.resolvePromptForUser(user);
+      return { usedDefault: false, experienceTitleMode: 'saved' as const, promptName: prompt.name, profileName, prompt, coverLetterPrompt: undefined };
     }
-    const prompt = await this.resolvePromptForUser(user);
-    return {
-      // Falling back is only a warning when the admin chose profile assignments.
-      usedDefault: mode === 'profile',
-      experienceTitleMode: 'saved' as const,
-      promptName: prompt.name,
-      profileName,
-      prompt,
-    };
-  }
-
-  /**
-   * Resolve the prompt used for generations.
-   * A profile assignment wins. Otherwise the bidder's default prompt, then the initial prompt.
-   */
-  async resolvePromptForUser(
-    user: AuthUser | { id: string; role: string },
-    options?: { profileId?: string },
-  ): Promise<{ id: string; name: string; content: string; version: number; isPublished: boolean }> {
-    if (isMaster(user.role)) {
-      const prompt = await this.getMasterPublishedPrompt();
-      if (!prompt) throw new BadRequestException('No published initial prompt');
-      return prompt;
-    }
-
-    if (isAdmin(user.role)) {
-      const dbUser = await this.prisma.user.findUnique({ where: { id: user.id } });
-      if (!dbUser) throw new NotFoundException('User not found');
-      if (dbUser.useMasterPrompt) {
-        const prompt = await this.getMasterPublishedPrompt();
-        if (!prompt) throw new BadRequestException('No published initial prompt');
-        return prompt;
-      }
-      if (dbUser.selectedPromptId) {
-        const selected = await this.prisma.promptVersion.findFirst({
-          where: { id: dbUser.selectedPromptId, ownerId: user.id, isPublished: true },
-        });
-        if (selected) return selected;
-      }
-      const custom = await this.getAdminPublishedPrompt(user.id);
-      if (!custom) {
-        throw new BadRequestException(
-          'You selected a custom prompt but have not saved one yet. Add a prompt in Settings.',
-        );
-      }
-      return custom;
-    }
-
-    const bidder = await this.prisma.user.findUnique({ where: { id: user.id } });
-    if (!bidder?.managedByAdminId) {
-      throw new BadRequestException('Bidder is not assigned to an admin; cannot resolve prompt');
-    }
-
-    if (options?.profileId) {
-      const { prompt: assigned } = await this.findProfileAssignedPrompt(user.id, options.profileId);
-      if (assigned && !assigned.isPersonalDefault) return assigned;
-    }
-
-    const assigned = await this.prisma.promptAssignment.findFirst({
-      where: { userId: user.id, promptVersion: { archivedAt: null } },
-      orderBy: [{ isDefault: 'desc' }, { createdAt: 'asc' }],
-      include: { promptVersion: true },
-    });
-    if (assigned?.promptVersion && !assigned.promptVersion.isPersonalDefault) return assigned.promptVersion;
-
-    if (bidder.useMasterPrompt !== false) {
-      const prompt = await this.getMasterPublishedPrompt();
-      if (!prompt) throw new BadRequestException('No published initial prompt');
-      return prompt;
-    }
-
-    const custom = await this.getBidderPublishedPrompt(bidder.id);
-    if (!custom) {
-      throw new BadRequestException(
-        'No prompt assigned yet. Ask your Admin to assign a prompt.',
-      );
-    }
-    return custom;
+    const preference = await this.getProfileGenerationPreference(profileId, user as AuthUser);
+    if (!preference.resumePromptId) throw new BadRequestException('Choose ' + (mode === 'profile' ? 'a combined' : 'a resume') + ' prompt for ' + profileName + ' in Settings.');
+    const prompt = await this.usablePersonalPrompt(preference.resumePromptId, user.id);
+    if (mode === 'profile' && prompt.documentKind === 'cover-letter') throw new BadRequestException('Choose a combined resume + cover-letter prompt for this profile.');
+    const coverLetterPrompt = mode === 'separate' && preference.coverLetterPromptId ? await this.usablePersonalPrompt(preference.coverLetterPromptId, user.id) : undefined;
+    if (mode === 'separate' && !coverLetterPrompt) throw new BadRequestException('Assign both a resume prompt and a cover letter prompt for ' + profileName + ' in Settings.');
+    return { usedDefault: false, experienceTitleMode: parseExperienceTitleMode(prompt.experienceTitleMode), promptName: prompt.name, profileName, prompt, coverLetterPrompt };
   }
 
   async getMyPromptSettings(user: AuthUser) {
-    const masterPrompt = await this.getMasterPublishedPrompt();
-    const assignmentMode = await this.getPromptAssignmentMode(user);
-
-    if (isMaster(user.role)) {
-      return {
-        role: 'MASTER' as const,
-        useMasterPrompt: true,
-        promptSource: 'initial' as const,
-        assignmentMode,
-        masterPrompt,
-        myPrompt: null,
-        myPrompts: [] as { id: string; name: string; content: string }[],
-        assignedPrompts: [] as { id: string; name: string; isDefault: boolean }[],
-        profilePrompts: [] as { profileName: string; promptName: string }[],
-        selectedPromptId: null as string | null,
-        effectivePrompt: masterPrompt,
-      };
-    }
-
-    if (isAdmin(user.role)) {
-      const dbUser = await this.prisma.user.findUnique({ where: { id: user.id } });
-      const myPrompts = await this.prisma.promptVersion.findMany({
-        where: { ownerId: user.id, isPublished: true, isPersonalDefault: false },
-        orderBy: { updatedAt: 'desc' },
-      });
-      const selected = dbUser?.selectedPromptId
-        ? await this.prisma.promptVersion.findFirst({ where: { id: dbUser.selectedPromptId, ownerId: user.id, isPublished: true } })
-        : await this.getAdminPublishedPrompt(user.id);
-      const useMasterPrompt = dbUser?.useMasterPrompt ?? true;
-      let effectivePrompt = masterPrompt;
-      if (!useMasterPrompt && selected) effectivePrompt = selected;
-      else if (!useMasterPrompt && !selected) effectivePrompt = null;
-      return {
-        role: 'ADMIN' as const,
-        useMasterPrompt,
-        promptSource: (useMasterPrompt ? 'initial' : 'custom') as 'initial' | 'custom',
-        assignmentMode,
-        masterPrompt,
-        myPrompt: selected,
-        myPrompts,
-        assignedPrompts: [],
-        profilePrompts: [],
-        selectedPromptId: dbUser?.selectedPromptId ?? selected?.id ?? null,
-        effectivePrompt,
-      };
-    }
-
-    const bidder = await this.prisma.user.findUnique({ where: { id: user.id } });
-    const assignedRows = await this.prisma.promptAssignment.findMany({
-      where: { userId: user.id, promptVersion: { archivedAt: null } },
-      orderBy: [{ isDefault: 'desc' }, { createdAt: 'asc' }],
-      include: { promptVersion: { select: { id: true, name: true, content: true } } },
-    });
-    const assignedPrompts = assignedRows.map((row) => ({
-      id: row.promptVersion.id,
-      name: row.promptVersion.name,
-      content: row.promptVersion.content,
-      isDefault: row.isDefault,
-    }));
-    const profileRows = await this.prisma.profilePromptAssignment.findMany({
-      where: { userId: user.id, promptVersion: { archivedAt: null } },
-      include: {
-        promptVersion: { select: { name: true } },
-        profile: { select: { firstName: true, lastName: true } },
-      },
-    });
-    const useMasterPrompt = assignedPrompts.length === 0 && bidder?.useMasterPrompt !== false;
-    const effectivePrompt = await this.resolvePromptForUser(user).catch(() => null);
-
-    return {
-      role: 'BIDDER' as const,
-      useMasterPrompt,
-      promptSource: (useMasterPrompt ? 'initial' : 'custom') as 'initial' | 'custom',
-      assignmentMode,
-      masterPrompt: useMasterPrompt ? masterPrompt : null,
-      myPrompt: effectivePrompt,
-      myPrompts: [],
-      assignedPrompts,
-      profilePrompts: profileRows.map((row) => ({
-        profileName: `${row.profile.firstName} ${row.profile.lastName}`.trim(),
-        promptName: row.promptVersion.name,
-      })),
-      selectedPromptId: assignedPrompts.find((p) => p.isDefault)?.id ?? assignedPrompts[0]?.id ?? null,
-      effectivePrompt,
-    };
+    const prompt = await this.resolvePromptForUser(user);
+    return { role: user.role, assignmentMode: await this.getPromptAssignmentMode(user), useMasterPrompt: false,
+      promptSource: 'custom' as const, masterPrompt: null, myPrompt: prompt, effectivePrompt: prompt,
+      myPrompts: await this.listManagedPrompts(user), assignedPrompts: [], profilePrompts: [], selectedPromptId: prompt.id };
   }
 
-  async updateMyPromptSettings(
-    user: AuthUser,
-    data: { mode?: 'user' | 'profile'; content?: string; resetToDefault?: boolean },
-  ) {
-    if (!isAdmin(user.role)) {
-      throw new ForbiddenException('Only admins can update their prompt settings');
-    }
-
-    if (!data || (data.mode === undefined && data.content === undefined && data.resetToDefault !== true)) {
-      throw new BadRequestException('Choose a prompt mode or edit the default prompt');
-    }
-    if (data.mode !== undefined && data.mode !== 'user' && data.mode !== 'profile') {
-      throw new BadRequestException('Prompt mode must be user or profile');
-    }
-    if (data.resetToDefault !== undefined && typeof data.resetToDefault !== 'boolean') {
-      throw new BadRequestException('Invalid reset option');
-    }
-    if (data.content !== undefined && (typeof data.content !== 'string' || !data.content.trim() || data.content.length > 80_000)) {
-      throw new BadRequestException('Prompt content must contain between 1 and 80,000 characters');
-    }
-    if (data.resetToDefault && data.content !== undefined) {
-      throw new BadRequestException('Choose either a default reset or edited content');
-    }
-    if (data.resetToDefault) {
-      const shared = await this.getMasterPublishedPrompt();
-      if (!shared?.content.trim()) {
-        throw new BadRequestException('The shared default prompt is unavailable. Your current prompt has not been changed.');
-      }
-    }
-    const current = data.content !== undefined ? (await this.getMyPromptSettings(user)).effectivePrompt : null;
-    await this.prisma.$transaction(async (tx) => {
-      const patch: { generationPromptMode?: string; useMasterPrompt?: boolean; selectedPromptId?: string | null } = {};
-      if (data.mode) patch.generationPromptMode = data.mode;
-      if (data.resetToDefault) {
-        patch.useMasterPrompt = true;
-        patch.selectedPromptId = null;
-      } else if (data.content !== undefined && data.content.trim() !== current?.content.trim()) {
-        // Always copy: editing a default must never change a shared or assigned library prompt.
+  async updateMyPromptSettings(user: AuthUser, data: { mode?: 'user' | 'profile' | 'separate'; content?: string; resetToDefault?: boolean }) {
+    if (!data || (data.mode === undefined && data.content === undefined && !data.resetToDefault)) throw new BadRequestException('Choose a generation way or enter prompt instructions.');
+    if (data.mode !== undefined && !['user', 'profile', 'separate'].includes(data.mode)) throw new BadRequestException('Choose one of the three generation ways.');
+    if (data.resetToDefault && data.content !== undefined) throw new BadRequestException('Choose either starter instructions or custom instructions.');
+    const instructions = data.resetToDefault ? DEFAULT_PROMPT : data.content !== undefined ? promptInstructions(data.content) : undefined;
+    if (instructions !== undefined && (!instructions || instructions.length > 80000)) throw new BadRequestException('Enter non-empty prompt instructions (up to 80,000 characters).');
+    await this.prisma.$transaction(async tx => {
+      await tx.$queryRaw`SELECT id FROM users WHERE id = ${user.id} FOR UPDATE`;
+      let selectedPromptId: string | undefined;
+      if (instructions !== undefined) {
         const latest = await tx.promptVersion.findFirst({ where: { ownerId: user.id }, orderBy: { version: 'desc' } });
-        const created = await tx.promptVersion.create({ data: {
-          name: 'My default prompt', content: data.content.trim(), ownerId: user.id,
-          version: (latest?.version || 0) + 1, isPublished: true, publishedAt: new Date(),
-          isPersonalDefault: true,
-        } });
-        patch.selectedPromptId = created.id;
-        patch.useMasterPrompt = false;
+        const created = await tx.promptVersion.create({ data: { ownerId: user.id, name: 'My all-profile prompt', isPersonalDefault: true,
+          content: appendJsonRules(instructions), documentKind: 'combined', isPublished: true, publishedAt: new Date(), version: (latest?.version || 0) + 1 } });
+        selectedPromptId = created.id;
       }
-      if (Object.keys(patch).length) await tx.user.update({ where: { id: user.id }, data: patch });
+      await tx.user.update({ where: { id: user.id }, data: { useMasterPrompt: false, ...(data.mode ? { generationPromptMode: data.mode } : {}), ...(selectedPromptId ? { selectedPromptId } : {}) } });
     });
-
     return this.getMyPromptSettings(user);
+  }
+
+  async getProfileGenerationPreference(profileId: string, user: AuthUser) {
+    return await this.prisma.profileGenerationPreference.findUnique({ where: { userId_profileId: { userId: user.id, profileId } } }) || { resumePromptId: null, coverLetterPromptId: null };
+  }
+
+  async saveProfileGenerationPreference(profileId: string, user: AuthUser, data: { resumePromptId?: string | null; coverLetterPromptId?: string | null }) {
+    for (const id of [data.resumePromptId, data.coverLetterPromptId]) {
+      if (id !== undefined && id !== null && (typeof id !== 'string' || !id)) throw new BadRequestException('Invalid prompt selection');
+      if (id) await this.usablePersonalPrompt(id, user.id);
+    }
+    return this.prisma.profileGenerationPreference.upsert({ where: { userId_profileId: { userId: user.id, profileId } }, create: { userId: user.id, profileId, ...data }, update: data });
+  }
+
+  async getGenerationWorkflow(user: AuthUser) {
+    const settings = await this.getMyPromptSettings(user);
+    const profiles = await this.prisma.profile.findMany({
+      where: { archivedAt: null, ...(user.role === 'BIDDER' ? { assignments: { some: { userId: user.id, activeTo: null } } } : {}) },
+      select: { id: true, firstName: true, lastName: true, profileTitle: true, generationPreferences: { where: { userId: user.id }, select: { resumePromptId: true, coverLetterPromptId: true } } },
+      orderBy: [{ firstName: 'asc' }, { lastName: 'asc' }],
+    });
+    return { mode: settings.assignmentMode, defaultPrompt: settings.effectivePrompt, prompts: settings.myPrompts,
+      profiles: profiles.map(profile => ({ id: profile.id, name: [profile.firstName, profile.lastName].join(' '), title: profile.profileTitle, ...(profile.generationPreferences[0] || { resumePromptId: null, coverLetterPromptId: null }) })),
+      jsonRules: { combined: jsonOutputRules('combined'), resume: jsonOutputRules('resume'), 'cover-letter': jsonOutputRules('cover-letter') } };
   }
 
   async getAiSettings() {
@@ -636,22 +243,22 @@ export class SettingsService {
     return setting?.value || 'deepseek-v4-flash';
   }
 
-  async getAnswerPrompt(): Promise<string> {
+  async getAnswerPrompt(userId: string): Promise<string> {
     const setting = await this.prisma.systemSetting.findUnique({
-      where: { key: SettingsService.ANSWER_PROMPT_KEY },
+      where: { key: `${SettingsService.ANSWER_PROMPT_KEY}:${userId}` },
     });
     const value = setting?.value?.trim();
     return value || SettingsService.DEFAULT_ANSWER_PROMPT;
   }
 
-  async setAnswerPrompt(prompt: string): Promise<string> {
+  async setAnswerPrompt(prompt: string, userId: string): Promise<string> {
     const value = prompt?.trim() || SettingsService.DEFAULT_ANSWER_PROMPT;
     if (value.length > 20_000) {
       throw new BadRequestException('Answer prompt is too long');
     }
     await this.prisma.systemSetting.upsert({
-      where: { key: SettingsService.ANSWER_PROMPT_KEY },
-      create: { key: SettingsService.ANSWER_PROMPT_KEY, value },
+      where: { key: `${SettingsService.ANSWER_PROMPT_KEY}:${userId}` },
+      create: { key: `${SettingsService.ANSWER_PROMPT_KEY}:${userId}`, value },
       update: { value },
     });
     return value;

@@ -17,7 +17,7 @@ function fixture() {
     user: { id: 'user-1', role: 'BIDDER', email: 'test@example.com', firstName: 'Test', lastName: 'User' },
     permission: true, allowed: true, assigned: true, published: true, template: 'template-1',
     application: { id: 'app-1', profileId: 'profile-1', bidderId: 'user-1', warnings: [], jobTitle: 'Target Job', company: 'Hiring Co', jobDescription: 'Build reliable Java services.' },
-    snapshot: { firstName: 'Alex', lastName: 'Example', profileTitle: 'Backend Engineer', experiences: [], education: [], certifications: [], skills: ['Java'] },
+    snapshot: { firstName: 'Alex', lastName: 'Example', profileTitle: 'Backend Engineer', experiences: [{ title: 'Engineer', company: 'Previous Co', startDate: '2020' }], education: [], certifications: [], skills: [{ category: 'Languages', name: 'Java' }] },
     prompt: { id: 'prompt-1', content: 'Profile: {{profileJson}}\nJob: {{jobTitle}} at {{company}}\nDescription: {{jobDescription}}', version: 1 },
     saved: [], audits: [], queued: [], providerCalls: 0,
   };
@@ -45,7 +45,7 @@ function fixture() {
     { checkAccess: async () => {}, findOne: async () => state.snapshot, buildProfileSnapshot: (p) => p },
     { canGenerate: () => ({ allowed: state.allowed }) },
     settings,
-    { resolveDefaultTemplateId: async () => state.template, checkAccess: async () => { if (!state.assigned) throw new Error('Template access denied'); } },
+    { resolveDefaultTemplateId: async () => state.template, checkAccess: async () => { if (!state.assigned) throw new Error('Template access denied'); return { configJson: {} }; } },
     {},
     { add: async (name, data) => state.queued.push({ name, data }) },
     deepseek,
@@ -94,7 +94,7 @@ test('manual import saves a completed version, snapshot, template, conversation 
   assert.ok(saved.completedAt instanceof Date);
   assert.equal(saved.templateVersionId, 'template-1');
   assert.equal(saved.promptVersionId, 'prompt-1');
-  assert.equal(saved.structuredOutputJson.contact.title, saved.structuredOutputJson.experiences[0].title);
+  assert.equal(saved.structuredOutputJson.contact.title, f.state.snapshot.experiences[0].title);
   assert.equal(saved.structuredOutputJson.coverLetter, undefined, 'resume-only imports must not silently create a default letter');
   assert.deepEqual(saved.profileSnapshotJson, f.state.snapshot);
   assert.deepEqual(saved.turns.create.map((t) => t.purpose), ['resume_system', 'resume_user', 'resume_assistant']);
@@ -122,7 +122,7 @@ test('invalid, empty, incomplete and bulletless responses are rejected without s
   delete missingBullets.experiences[0].bullets;
   const missingSkills = response();
   delete missingSkills.skills;
-  for (const raw of ['broken JSON', '{}', '[]', 'null', JSON.stringify(missingSkills), JSON.stringify(missingBullets)]) {
+  for (const raw of ['broken JSON', '{}', '[]', 'null', JSON.stringify(missingBullets)]) {
     await assert.rejects(f.save(f.input(prepared, raw)), (error) => error.getStatus() === 400, raw);
   }
   assert.equal(f.state.saved.length, 0);

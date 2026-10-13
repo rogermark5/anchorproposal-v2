@@ -204,113 +204,20 @@ export class ProfilesService {
   }
 
   async getProfilePromptAssignments(profileId: string, actor: AuthUser) {
-    if (!isStaff(actor.role)) throw new ForbiddenException();
-    const profile = await this.prisma.profile.findFirst({
-      where: { id: profileId, archivedAt: null },
-      select: { id: true, firstName: true, lastName: true, promptVersionId: true },
-    });
+    await this.checkAccess(profileId, actor);
+    const profile = await this.prisma.profile.findFirst({ where: { id: profileId, archivedAt: null }, select: { id: true, firstName: true, lastName: true } });
     if (!profile) throw new NotFoundException('Profile not found');
-
-    const [mode, prompts, profileAssignments, existing] = await Promise.all([
-      this.settingsService.getPromptAssignmentMode(),
-      this.settingsService.listAssignablePrompts(actor),
-      this.prisma.profileAssignment.findMany({
-        where: {
-          profileId,
-          activeTo: null,
-          user: {
-            role: UserRole.BIDDER,
-            ...(isAdmin(actor.role) ? { managedByAdminId: actor.id } : {}),
-          },
-        },
-        include: {
-          user: { select: { id: true, firstName: true, lastName: true, email: true } },
-        },
-        orderBy: { user: { firstName: 'asc' } },
-      }),
-      this.prisma.profilePromptAssignment.findMany({
-        where: { profileId },
-        select: { userId: true, promptVersionId: true },
-      }),
-    ]);
-
-    const promptByUser = new Map(existing.map((row) => [row.userId, row.promptVersionId]));
-    return {
-      mode,
-      profile,
-      prompts: prompts.map((p) => ({
-        id: p.id,
-        name: p.name,
-        isInitial: p.isInitial,
-        ownerId: p.ownerId,
-        ownerName: p.owner ? `${p.owner.firstName} ${p.owner.lastName}`.trim() : null,
-      })),
-      bidders: profileAssignments.map((row) => ({
-        id: row.user.id,
-        firstName: row.user.firstName,
-        lastName: row.user.lastName,
-        email: row.user.email,
-        promptVersionId: promptByUser.get(row.user.id) ?? null,
-      })),
-    };
+    const preference = await this.settingsService.getProfileGenerationPreference(profileId, actor);
+    const prompts = await this.settingsService.listAssignablePrompts(actor);
+    return { mode: await this.settingsService.getPromptAssignmentMode(actor), profile: { ...profile, promptVersionId: preference.resumePromptId },
+      prompts: prompts.map(prompt => ({ id: prompt.id, name: prompt.name, isInitial: false, ownerId: actor.id, ownerName: 'Me' })), bidders: [] };
   }
 
-  async updateProfilePromptAssignments(
-    profileId: string,
-    assignments: { userId: string; promptVersionId: string | null }[],
-    actor: AuthUser,
-    profilePromptVersionId?: string | null,
-  ) {
-    if (!isStaff(actor.role)) throw new ForbiddenException();
-    const current = await this.getProfilePromptAssignments(profileId, actor);
-    const allowedBidders = new Set(current.bidders.map((b) => b.id));
-    const promptIds = [
-      ...assignments.map((a) => a.promptVersionId).filter((id): id is string => Boolean(id)),
-      ...(profilePromptVersionId ? [profilePromptVersionId] : []),
-    ];
-    await this.settingsService.assertAssignablePrompts(actor, promptIds);
-
-    // Validate every bidder before any shared or bidder-specific prompt is changed.
-    for (const row of assignments) {
-      if (!allowedBidders.has(row.userId)) {
-        throw new ForbiddenException('You can only assign prompts to bidders on this profile');
-      }
-    }
-
-    if (profilePromptVersionId !== undefined) {
-      await this.prisma.profile.update({
-        where: { id: profileId },
-        data: { promptVersionId: profilePromptVersionId },
-      });
-    }
-
-    for (const row of assignments) {
-      if (!allowedBidders.has(row.userId)) {
-        throw new ForbiddenException('You can only assign prompts to bidders on this profile');
-      }
-      if (!row.promptVersionId) {
-        await this.prisma.profilePromptAssignment.deleteMany({
-          where: { profileId, userId: row.userId },
-        });
-        continue;
-      }
-      await this.prisma.profilePromptAssignment.upsert({
-        where: { profileId_userId: { profileId, userId: row.userId } },
-        create: { profileId, userId: row.userId, promptVersionId: row.promptVersionId },
-        update: { promptVersionId: row.promptVersionId },
-      });
-    }
-
-    await this.prisma.auditEvent.create({
-      data: {
-        actorId: actor.id,
-        action: 'PROFILE_PROMPT_ASSIGNMENTS_UPDATED',
-        targetType: 'Profile',
-        targetId: profileId,
-        changesJson: { assignments },
-      },
-    });
-
+  async updateProfilePromptAssignments(profileId: string, assignments: { userId: string; promptVersionId: string | null }[], actor: AuthUser, profilePromptVersionId?: string | null) {
+    await this.checkAccess(profileId, actor);
+    if (assignments.some(row => row.userId !== actor.id)) throw new ForbiddenException('Prompts are private. Each user manages their own profile prompts in Settings.');
+    const id = profilePromptVersionId !== undefined ? profilePromptVersionId : assignments.find(row => row.userId === actor.id)?.promptVersionId;
+    if (id !== undefined) await this.settingsService.saveProfileGenerationPreference(profileId, actor, { resumePromptId: id });
     return this.getProfilePromptAssignments(profileId, actor);
   }
 
@@ -333,5 +240,15 @@ export class ProfilesService {
       certifications: profile.certifications,
       links: profile.links,
     };
+  }
+
+  async getGenerationPreference(profileId: string, user: AuthUser) {
+    await this.checkAccess(profileId, user);
+    return this.settingsService.getProfileGenerationPreference(profileId, user);
+  }
+
+  async saveGenerationPreference(profileId: string, user: AuthUser, data: { resumePromptId?: string | null; coverLetterPromptId?: string | null }) {
+    await this.checkAccess(profileId, user);
+    return this.settingsService.saveProfileGenerationPreference(profileId, user, data);
   }
 }

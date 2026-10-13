@@ -6,6 +6,7 @@ import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { toast } from 'sonner';
 import { api } from '@/lib/api';
+import { GenerationPreviewDialog } from '@/components/generation-preview-dialog';
 import { ArrowLeft, AlertTriangle, Sparkles } from 'lucide-react';
 import { DefaultPromptWarning } from '@/components/default-prompt-warning';
 import { GetAnswersPanel } from '@/components/get-answers';
@@ -76,6 +77,7 @@ export default function ApplicationDetailPage() {
     null,
   );
   const [answerGenerationId, setAnswerGenerationId] = useState('');
+  const [previewId, setPreviewId] = useState<string | null>(null);
 
   const load = () => api.getApplication(id).then(setApp).catch(console.error);
   useEffect(() => {
@@ -108,6 +110,7 @@ export default function ApplicationDetailPage() {
       if (terminal.status === 'COMPLETED') {
         toast.success('Resume and cover letter ready — see Files');
         setTab('files');
+        setPreviewId(started.id);
       } else if (terminal.status === 'FAILED') {
         toast.error(terminal.errorMessage || 'Generation failed');
       }
@@ -134,7 +137,7 @@ export default function ApplicationDetailPage() {
 
   const pollGeneration = async (
     generationId: string,
-    maxAttempts = 90,
+    maxAttempts = 240,
   ): Promise<{ status: string; errorMessage?: string | null }> => {
     for (let i = 0; i < maxAttempts; i++) {
       await new Promise((r) => setTimeout(r, 2000));
@@ -150,7 +153,6 @@ export default function ApplicationDetailPage() {
       } catch {
         /* keep polling */
       }
-      load();
     }
     return { status: 'FAILED', errorMessage: 'Generation timed out — check History for status' };
   };
@@ -187,6 +189,7 @@ export default function ApplicationDetailPage() {
 
   return (
     <div className="p-4 sm:p-6 lg:p-8">
+      {previewId && <GenerationPreviewDialog applicationId={id} initialGenerationId={previewId} onClose={() => setPreviewId(null)} />}
       <Link href="/applications" className="flex items-center gap-2 text-sm text-slate-500 hover:text-primary mb-6">
         <ArrowLeft className="w-4 h-4" /> Back to Applications
       </Link>
@@ -338,6 +341,7 @@ export default function ApplicationDetailPage() {
                 <span className="text-sm text-slate-500">{gen.completedAt ? formatDate(gen.completedAt as string) : 'In progress'}</span>
               </div>
               <div className="flex flex-wrap gap-2">
+                {gen.status === 'COMPLETED' && <button className="px-3 py-1.5 bg-primary text-white rounded-lg text-sm" onClick={() => setPreviewId(gen.id as string)}>Preview and download both</button>}
                 {gen.status === 'COMPLETED'
                   ? (
                       [

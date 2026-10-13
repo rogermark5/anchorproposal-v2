@@ -9,6 +9,9 @@ import { SettingsService } from '../settings/settings.service';
 import { eventData } from './event-stream';
 import type { ExperienceTitleMode } from '../generations/experience-title-mode';
 import { COVER_LETTER_INSTRUCTIONS, usableCoverLetter } from './cover-letter';
+import { bindProfileOutput } from '../generations/profile-output';
+import { resumeHeadline } from '../common/utils/resume-headline';
+import { appendJsonRules, promptInstructions, type DocumentKind } from './json-rules';
 
 type StreamOptions = { signal: AbortSignal; onProgress: (characters: number) => void };
 
@@ -20,18 +23,8 @@ type GenMeta = {
   profileExperiences?: Record<string, unknown>[];
   profileSnapshot?: Record<string, unknown>;
   experienceTitleMode?: ExperienceTitleMode;
+  coverLetterPrompt?: string;
 };
-
-const RESUME_JSON_EXAMPLE = [
-  '{',
-  '  "contact":{"name":"Jane Doe","title":"Software Engineer","email":"jane@example.com"},',
-  '  "summary":"...",',
-  '  "skills":[{"Languages":"TypeScript, Python"}],',
-  '  "experiences":[{"title":"Engineer","company":"Acme","dates":"2020 – Present","bullets":["Shipped X","Improved Y"]}],',
-  '  "educations":[{"degree":"B.S. CS","institution":"State U","dates":"2016 – 2020"}],',
-  '  "certificates":[{"name":"AWS SAA","issuer":"Amazon","date":"2023"}]',
-  '}',
-].join(' ');
 
 @Injectable()
 export class DeepseekService {
@@ -39,28 +32,17 @@ export class DeepseekService {
 
   constructor(private settings: SettingsService) {}
 
-  resumeSystemContent(experienceTitleMode: ExperienceTitleMode = 'saved'): string {
-    if (experienceTitleMode === 'tailored') return [
+  resumeSystemContent(experienceTitleMode: ExperienceTitleMode = 'saved', documentKind: DocumentKind = 'combined'): string {
+    return appendJsonRules([
       'You are a professional resume writer. Reply with valid JSON only (no markdown fences).',
-      'Experience title mode: tailored. Tailor each experience role to the target JD, grounded in the candidate\'s actual responsibilities and seniority. Do not invent employers, dates, qualifications, or achievements.',
-      'Use this JSON shape: {"summary":"...","skills":[{"Languages":"TypeScript, Python"}],"experiences":[{"role":"Backend Engineer","bullets":["Achievement one","Achievement two"]}],"educations":[],"certificates":[]}',
+      experienceTitleMode === 'tailored' ? 'Experience title mode: tailored. Tailor each experience role to the target JD, grounded in the candidate\'s actual responsibilities and seniority. Do not invent employers, dates, qualifications, or achievements.' : 'Experience title mode: saved. Keep each position exactly as saved in the database profile. The server supplies saved positions and contact details.',
       'Return exactly one experience for EVERY saved profile experience, in the SAME order. Each role must be a non-empty plain string and each bullets value must be a non-empty array of plain strings. Follow the requested bullet counts when supported by the candidate evidence; if no counts are requested, use 4-8 bullets. Never invent achievements or metrics to reach a count.',
       'Return educations and certificates as flat arrays copied from the saved profile without changing qualifications. Use [] when the profile has none. The prompt template education and certificate placeholders are expanded before generation; never return unresolved placeholders.',
       'The server adds the saved contact details, companies, locations and dates. Do not return or change those fields. Saved profile education and certificates remain authoritative.',
+      'The resume headline uses the first (most recent) experience role after applying the selected title mode. If the summary names a professional role, use that same role.',
       'These selected output format and experience title instructions take precedence over conflicting output formats or fixed-title instructions in the resume request.',
-      COVER_LETTER_INSTRUCTIONS,
-    ].join(' ');
-    return [
-      'You are a professional resume writer. Reply with valid json only (no markdown fences).',
-      'Use this json shape:',
-      RESUME_JSON_EXAMPLE,
-      'Required keys: contact, summary, skills, experiences, educations, certificates, coverLetter.',
-      'Experience title mode: saved. Keep each experience title exactly as saved in the profile. Return experiences in the same order as the profile. This takes precedence over instructions to tailor experience roles.',
-      'contact.title must exactly match the first (most recent) experience title. When there is no experience, use the saved profile title.',
-      'CRITICAL: every item in experiences MUST include "bullets": an array of 4-8 plain strings (achievements/responsibilities). Never omit bullets. Never use nested objects for bullets.',
-      'Education/certificate fields must be plain strings.',
-      COVER_LETTER_INSTRUCTIONS,
-    ].join(' ');
+      ...(documentKind === 'resume' ? [] : [COVER_LETTER_INSTRUCTIONS]),
+    ].join(' '), documentKind, experienceTitleMode);
   }
 
   async generate(
@@ -76,14 +58,27 @@ export class DeepseekService {
 
     const model = await this.settings.getModel();
 
-    const system = this.resumeSystemContent(meta.experienceTitleMode);
+    const documentKind = meta.coverLetterPrompt ? 'resume' : 'combined';
+    const system = this.resumeSystemContent(meta.experienceTitleMode, documentKind);
+    prompt = appendJsonRules(prompt, documentKind, meta.experienceTitleMode || 'saved', meta.profileExperiences?.length);
     const { parsed, tokenUsage: usage1 } = await this.chatJson(apiKey, model, [
       { role: 'system', content: system },
       { role: 'user', content: prompt },
     ], stream);
 
     let tokenUsage = usage1;
-    let validated = this.validateResumeOutput(parsed, meta);
+    let validated: GenerationOutput;
+    try { validated = this.validateResumeOutput(parsed, meta); }
+    catch (error) {
+      // Repair structure once, using only the authoritative profile and required contract.
+      if (/another employer|saved company/.test((error as Error).message)) throw error;
+      const repair = await this.chatJson(apiKey, model, [{ role: 'system', content: system }, { role: 'user', content: appendJsonRules([
+        promptInstructions(prompt), 'The previous response failed validation: ' + (error as Error).message,
+        'Return a corrected object using only the saved profile. Previous response:', JSON.stringify(parsed),
+      ].join('\n\n'), documentKind, meta.experienceTitleMode || 'saved', meta.profileExperiences?.length) }], stream);
+      tokenUsage += repair.tokenUsage;
+      validated = this.validateResumeOutput(repair.parsed, meta);
+    }
 
     if (this.experiencesMissingBullets(validated)) {
       const repaired = await this.repairExperienceBullets(
@@ -111,9 +106,20 @@ export class DeepseekService {
       { role: 'user', content: prompt },
       { role: 'assistant', content: JSON.stringify(validated) },
     ];
+    if (meta.coverLetterPrompt) {
+      const request = appendJsonRules(`${promptInstructions(meta.coverLetterPrompt)}\n\nACCEPTED RESUME JSON\n${JSON.stringify(validated)}\n\n${COVER_LETTER_INSTRUCTIONS}`, 'cover-letter');
+      const letterSystem = appendJsonRules('You write a cover letter for the saved database candidate. Ignore other identities in the prompt. ' + COVER_LETTER_INSTRUCTIONS, 'cover-letter');
+      const result = await this.chatJson(apiKey, model, [{ role: 'system', content: letterSystem }, { role: 'user', content: request }], stream);
+      tokenUsage += result.tokenUsage;
+      const letter = usableCoverLetter((result.parsed as { coverLetter?: unknown })?.coverLetter, validated.contact.name);
+      if (!letter) throw new Error('The separate cover letter request returned invalid content. Please generate again.');
+      validated = { ...validated, coverLetter: letter };
+      transcript.push({ role: 'user', content: request }, { role: 'assistant', content: JSON.stringify({ coverLetter: letter }) });
+    }
     if (!validated.coverLetter) {
-      const request = 'The resume is accepted, but its cover letter is missing or invalid. Return only {"coverLetter":{...}} using the job description, company, and candidate evidence above. Do not rewrite the resume. ' + COVER_LETTER_INSTRUCTIONS;
-      const repair = await this.chatJson(apiKey, model, [...transcript, { role: 'user', content: request }], stream);
+      const request = appendJsonRules('The resume is accepted, but its cover letter is missing or invalid. Return only {"coverLetter":{...}} using the job description, company, and candidate evidence above. Do not rewrite the resume. ' + COVER_LETTER_INSTRUCTIONS, 'cover-letter');
+      const letterSystem = appendJsonRules('Write the missing cover letter using only the accepted candidate and target job. ' + COVER_LETTER_INSTRUCTIONS, 'cover-letter');
+      const repair = await this.chatJson(apiKey, model, [{ role: 'system', content: letterSystem }, ...transcript.slice(1), { role: 'user', content: request }], stream);
       tokenUsage += repair.tokenUsage;
       const letter = usableCoverLetter((repair.parsed as { coverLetter?: unknown } | null)?.coverLetter, meta.candidateName || validated.contact.name);
       if (!letter) throw new Error('The model did not return a valid tailored cover letter. Please generate again; no default letter was substituted.');
@@ -143,7 +149,9 @@ export class DeepseekService {
       throw err;
     }
 
-    return this.backfillBulletsFromProfile(validated, meta.profileExperiences);
+    if (!validated.summary.trim()) throw new Error('AI output must include a non-empty summary.');
+    validated = this.backfillBulletsFromProfile(validated, meta.profileExperiences);
+    return meta.profileSnapshot ? bindProfileOutput(validated, meta.profileSnapshot) : validated;
   }
 
   /** Import an external model's JSON without making any provider calls. */
@@ -161,7 +169,7 @@ export class DeepseekService {
     const root = isObject(parsed.data) ? parsed.data : isObject(parsed.result) ? parsed.result : parsed;
     const resume = isObject(root.resume) ? root.resume : root;
     const contact = isObject(resume.contact) ? resume.contact : resume.header;
-    if (meta.experienceTitleMode !== 'tailored' && (!isObject(contact) || typeof contact.name !== 'string' || !contact.name.trim())) {
+    if (!meta.profileSnapshot && meta.experienceTitleMode !== 'tailored' && (!isObject(contact) || typeof contact.name !== 'string' || !contact.name.trim())) {
       throw new Error('The JSON response must include contact.name.');
     }
     if (typeof resume.summary !== 'string' || !resume.summary.trim()) {
@@ -171,6 +179,7 @@ export class DeepseekService {
       ['skills', 'skills'], ['experiences', 'experience'],
       ['educations', 'education'], ['certificates', 'certifications'],
     ]) {
+      if (meta.profileSnapshot && key === 'skills') continue;
       if (meta.experienceTitleMode === 'tailored' && ['educations', 'certificates'].includes(key)) continue;
       if (!Array.isArray(resume[key] ?? resume[alias])) {
         throw new Error(`The JSON response must include a ${key} array (use [] if empty).`);
@@ -248,10 +257,20 @@ export class DeepseekService {
     messages: { role: string; content: string }[],
     stream?: StreamOptions,
   ): Promise<{ parsed: unknown; tokenUsage: number }> {
-    if (stream) return this.streamJson(apiKey, model, messages, stream);
     const maxAttempts = 3;
+    let totalTokens = 0;
+    let lastError = 'Empty response from DeepSeek';
 
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      if (stream) {
+        try { return await this.streamJson(apiKey, model, messages, stream); }
+        catch (error) {
+          if (stream.signal.aborted || !/invalid JSON/i.test((error as Error).message)) throw error;
+          lastError = 'The AI provider returned invalid JSON after three attempts. Please generate again.';
+          if (attempt < maxAttempts) continue;
+          break;
+        }
+      }
       const body: Record<string, unknown> = {
         model,
         messages,
@@ -286,6 +305,7 @@ export class DeepseekService {
         usage?: { total_tokens: number };
       };
       const raw = data.choices[0]?.message?.content?.trim();
+      totalTokens += data.usage?.total_tokens || 0;
       if (!raw) {
         this.logger.warn(
           `Empty DeepSeek content (model=${model}, attempt=${attempt}/${maxAttempts}, finish_reason=${data.choices[0]?.finish_reason ?? 'n/a'})`,
@@ -302,14 +322,17 @@ export class DeepseekService {
         parsed = JSON.parse(raw);
       } catch {
         const jsonMatch = raw.match(/\{[\s\S]*\}/);
-        if (!jsonMatch) throw new Error('Invalid JSON from DeepSeek');
-        parsed = JSON.parse(jsonMatch[0]);
+        try { parsed = jsonMatch ? JSON.parse(jsonMatch[0]) : undefined; } catch { parsed = undefined; }
+        if (parsed === undefined) {
+          lastError = 'The AI provider returned invalid JSON after three attempts. Please generate again.';
+          continue;
+        }
       }
 
-      return { parsed, tokenUsage: data.usage?.total_tokens || 0 };
+      return { parsed, tokenUsage: totalTokens };
     }
 
-    throw new Error('Empty response from DeepSeek');
+    throw new Error(lastError);
   }
 
   private async streamJson(apiKey: string, model: string, messages: { role: string; content: string }[], options: StreamOptions) {
@@ -341,7 +364,7 @@ export class DeepseekService {
     if (!finished || !raw.trim()) throw new Error('The AI connection ended before the resume was complete. Please try again.');
     options.onProgress(raw.length);
     try { return { parsed: JSON.parse(raw), tokenUsage }; }
-    catch { throw new Error('The AI returned incomplete resume JSON. Please try again.'); }
+    catch { throw new Error('The AI returned invalid JSON. Please try again.'); }
   }
 
   private experiencesMissingBullets(content: GenerationOutput): boolean {
@@ -391,80 +414,16 @@ export class DeepseekService {
     meta: GenMeta,
     stream?: StreamOptions,
   ): Promise<{ content: GenerationOutput; tokenUsage: number }> {
-    const roles = (content.experiences || []).map((exp) => {
-      const e = exp as Record<string, unknown>;
-      return {
-        title: plainText(e.title),
-        company: plainText(e.company),
-        dates: plainText(e.dates),
-        location: plainText(e.location) || undefined,
-      };
-    });
-
+    const kind = meta.coverLetterPrompt ? 'resume' : 'combined';
     const { parsed, tokenUsage } = await this.chatJson(apiKey, model, [
-      {
-        role: 'system',
-        content: [
-          'You fill missing resume experience bullets. Reply with valid json only (no markdown).',
-          'Example json shape: {"experiences":[{"title":"Engineer","company":"Acme","dates":"2020 – Present","bullets":["Shipped X","Improved Y"]}]}',
-          'Each item needs title, company, dates, optional location, and bullets: 4-8 plain strings. No nested objects.',
-        ].join(' '),
-      },
-      {
-        role: 'user',
-        content: [
-          'The previous resume JSON omitted experience bullets.',
-          'Keep the same roles/employers/dates. Write 4-8 achievement bullets per role grounded in the candidate profile and job context.',
-          'Do not invent employers or date ranges.',
-          '',
-          'Roles to complete:',
-          JSON.stringify(roles, null, 2),
-          '',
-          'Candidate / job context:',
-          originalPrompt.slice(0, 100_000),
-        ].join('\n'),
-      },
+      { role: 'system', content: this.resumeSystemContent(meta.experienceTitleMode, kind) },
+      { role: 'user', content: appendJsonRules([
+        promptInstructions(originalPrompt),
+        'The previous resume omitted experience bullets. Return the full corrected JSON object with substantive supported bullets for every saved experience. Preserve the accepted summary and other sections.',
+        'PREVIOUS RESUME JSON', JSON.stringify(content),
+      ].join('\n\n'), kind, meta.experienceTitleMode || 'saved', meta.profileExperiences?.length) },
     ], stream);
-
-    const root =
-      parsed && typeof parsed === 'object' ? (parsed as Record<string, unknown>) : {};
-    const repairedRows = this.asObjectArray(
-      root.experiences ?? root.experience,
-      'title',
-    ).map((row) => this.normalizeExperience(row));
-
-    const byKey = new Map<string, Record<string, unknown>>();
-    for (const row of repairedRows) {
-      const key = `${plainText(row.title).toLowerCase()}|${plainText(row.company).toLowerCase()}`;
-      byKey.set(key, row);
-    }
-
-    const experiences = (content.experiences || []).map((exp) => {
-      const e = exp as Record<string, unknown>;
-      if (plainTextList(e.bullets).length) return exp;
-      const key = `${plainText(e.title).toLowerCase()}|${plainText(e.company).toLowerCase()}`;
-      const hit = byKey.get(key);
-      const bullets = hit ? plainTextList(hit.bullets) : [];
-      if (!bullets.length) {
-        // Fall back to first repaired row with matching title only
-        const byTitle = repairedRows.find(
-          (r) => plainText(r.title).toLowerCase() === plainText(e.title).toLowerCase(),
-        );
-        const tBullets = byTitle ? plainTextList(byTitle.bullets) : [];
-        if (tBullets.length) return { ...e, bullets: tBullets };
-        return exp;
-      }
-      return { ...e, bullets };
-    });
-
-    const merged = generationOutputSchema.parse({
-      ...content,
-      experiences,
-    });
-    return {
-      content: this.backfillBulletsFromProfile(merged, meta.profileExperiences),
-      tokenUsage,
-    };
+    return { content: this.validateResumeOutput(parsed, meta), tokenUsage };
   }
 
   /** Keep / coerce AI JSON into the Admin prompt OUTPUT FORMAT. */
@@ -490,6 +449,9 @@ export class DeepseekService {
     }
 
     obj = this.applyExperienceTitleMode(obj, meta);
+    if (meta.profileSnapshot) {
+      obj.contact = bindProfileOutput({ ...obj, contact: {} } as GenerationOutput, meta.profileSnapshot).contact;
+    }
 
     const contactIn =
       obj.contact && typeof obj.contact === 'object'
@@ -556,6 +518,19 @@ export class DeepseekService {
   private applyExperienceTitleMode(obj: Record<string, unknown>, meta: GenMeta): Record<string, unknown> {
     const saved = meta.profileExperiences || [];
     const raw = obj.experiences ?? obj.experience;
+    if (meta.profileSnapshot && meta.experienceTitleMode !== 'tailored') {
+      if (!Array.isArray(raw) || raw.length !== saved.length) {
+        throw new Error(`The response must contain exactly ${saved.length} experiences from the selected saved profile, in the same order. The prompt may contain another candidate's history; remove it and generate again.`);
+      }
+      return { ...obj, experiences: raw.map((row, index) => {
+        const generated = this.normalizeExperience(row as Record<string, unknown>);
+        const original = this.normalizeExperience(saved[index]);
+        if (generated.company && plainText(generated.company).toLowerCase() !== plainText(original.company).toLowerCase()) {
+          throw new Error(`Experience ${index + 1} belongs to another employer. The selected database profile is authoritative; remove hardcoded candidate history from the prompt and generate again.`);
+        }
+        return { ...original, bullets: generated.bullets };
+      }) };
+    }
     if (meta.experienceTitleMode !== 'tailored') {
       if (!saved.length || !Array.isArray(raw)) return obj;
       const available = saved.map(row => this.normalizeExperience(row));
@@ -581,7 +556,7 @@ export class DeepseekService {
       const received = Array.isArray(raw) ? `${raw.length}` : 'no valid';
       throw new Error(`Saved profile${profileName ? ` “${profileName}”` : ''} has ${saved.length} experience${saved.length === 1 ? '' : 's'}, but the response contains ${received}. Update the work history in Profiles or select the correct profile, then generate again. Tailored output must include exactly ${saved.length} experience${saved.length === 1 ? '' : 's'} in the same order.`);
     }
-    if (typeof obj.summary !== 'string' || !obj.summary.trim() || !Array.isArray(obj.skills)) {
+    if (typeof obj.summary !== 'string' || !obj.summary.trim() || (!meta.profileSnapshot && !Array.isArray(obj.skills))) {
       throw new Error('Tailored output must include a non-empty summary and a skills array.');
     }
     const experiences = raw.map((row: unknown, index: number) => {
@@ -614,8 +589,8 @@ export class DeepseekService {
         linkedin: profile.linkedin || linkedin,
       },
       experiences,
-      educations: profile.education || profile.educations || [],
-      certificates: profile.certifications || profile.certificates || [],
+      educations: obj.educations ?? obj.education ?? profile.education ?? profile.educations ?? [],
+      certificates: obj.certificates ?? obj.certifications ?? profile.certifications ?? profile.certificates ?? [],
     };
   }
 
@@ -793,7 +768,7 @@ export class DeepseekService {
     experiences: Record<string, unknown>[],
   ): string | undefined {
     const profileTitle = plainText(meta.profileTitle);
-    const recentRole = plainText(experiences[0]?.title);
+    const recentRole = resumeHeadline(experiences);
     const aiTitle = aiCandidates
       .map((t) => plainText(t))
       .find((t) => t && !this.titlesMatchJob(t, meta.jobTitle));
@@ -947,6 +922,7 @@ export class DeepseekService {
       jobDescription: string;
       contentPolicy?: string;
       experienceTitleMode?: ExperienceTitleMode;
+      documentKind?: DocumentKind;
     },
   ): string {
     let profile: Record<string, unknown> = {};
@@ -1010,7 +986,7 @@ export class DeepseekService {
     };
     // JSON placeholders already contain arrays. Accept brackets in templates
     // without nesting those arrays, and never re-expand text inside profile data.
-    const expanded = template.replace(
+    const expanded = promptInstructions(template).replace(
       /\[\s*\{\{(experiencesJson|educationsJson|certificatesJson)\}\}\s*\]|\{\{(\w+)\}\}/g,
       (match, arrayKey: string | undefined, key: string | undefined) => {
         const name = arrayKey ?? key;
@@ -1024,16 +1000,16 @@ export class DeepseekService {
       jobTitle: vars.jobTitle, company: vars.company,
       ...(template.includes('{{jobDescription}}') ? {} : { jobDescription: vars.jobDescription }),
     })].join('\n');
-    if (vars.experienceTitleMode !== 'tailored') return `${expanded}\n\n${target}`;
     const experiences = Array.isArray(profile.experiences) ? profile.experiences : [];
-    return [
+    return appendJsonRules([
       expanded,
       '',
       'APPLICATION GENERATION CONTEXT',
       `The selected saved profile has exactly ${experiences.length} experience${experiences.length === 1 ? '' : 's'}. Return exactly that many experiences, in the same order.`,
       'Use the saved profile below (or the profile JSON already included above) as the factual source for employers, dates, responsibilities, qualifications, and achievements. Do not add employers from examples or conflicting hardcoded work histories in the custom prompt. Tailor only supported role titles and bullet content.',
-      ...(template.includes('{{profileJson}}') ? [] : ['SAVED CANDIDATE PROFILE JSON', JSON.stringify(profile)]),
+      ...(template.includes('{{profileJson}}') ? ['The expanded profileJson above is authoritative; ignore other candidate identities or histories in this prompt.'] : ['SAVED CANDIDATE PROFILE JSON (authoritative; ignore other candidate identities or histories in the prompt)', JSON.stringify(profile)]),
+      'The application uses ONLY this database profile for identity, contact, links and skills. The headline matches the first (most recent) experience role in the selected title mode; use the same role if the summary names a professional role. Do not use any hardcoded candidate data in the custom prompt. Generate only summary, experiences, educations, certificates and coverLetter. Sign the letter with this saved candidate name.',
       '', target,
-    ].join('\n');
+    ].join('\n'), vars.documentKind || 'combined', vars.experienceTitleMode || 'saved', experiences.length);
   }
 }

@@ -64,30 +64,7 @@ export class UsersService {
       orderBy: [{ role: 'asc' }, { createdAt: 'desc' }],
     });
 
-    const bidderIds = users.filter((u) => u.role === UserRole.BIDDER).map((u) => u.id);
-    const contentByBidder = new Map<string, string>();
-    if (bidderIds.length > 0) {
-      const prompts = await this.prisma.promptVersion.findMany({
-        where: { ownerId: { in: bidderIds }, isPublished: true },
-        orderBy: { publishedAt: 'desc' },
-        select: { ownerId: true, content: true },
-      });
-      for (const p of prompts) {
-        if (p.ownerId && !contentByBidder.has(p.ownerId)) {
-          contentByBidder.set(p.ownerId, p.content);
-        }
-      }
-    }
-
-    return users.map((u) => {
-      const defaultAssigned = u.promptAssignments?.find((a) => a.isDefault) || u.promptAssignments?.[0];
-      return {
-        ...publicUser(u),
-        assignedPromptContent:
-          u.role === UserRole.BIDDER ? contentByBidder.get(u.id) ?? null : null,
-        assignedPromptName: defaultAssigned?.promptVersion.name ?? null,
-      };
-    });
+    return users.map(user => ({ ...publicUser(user), promptAssignments: [], assignedPromptContent: null, assignedPromptName: null }));
   }
 
   async listAdmins(actor: AuthUser) {
@@ -400,168 +377,13 @@ export class UsersService {
     return publicUser(await this.prisma.user.update({ where: { id }, data }));
   }
 
-  async updatePromptAssignment(
-    id: string,
-    data: { useMasterPrompt: boolean; content?: string },
-    actor: AuthUser,
-  ) {
-    if (!isAdmin(actor.role)) {
-      throw new ForbiddenException('Only admins can assign prompts to bidders');
-    }
-    const user = await this.prisma.user.findUnique({ where: { id } });
-    if (!user) throw new NotFoundException('User not found');
-    if (user.role !== UserRole.BIDDER) {
-      throw new ForbiddenException('Prompt assignment is only available for bidders');
-    }
-    if (
-      !canManageUserStatus(actor.role, user.role, {
-        actorId: actor.id,
-        managedByAdminId: user.managedByAdminId,
-      })
-    ) {
-      throw new ForbiddenException();
-    }
-
-    const useMasterPrompt = Boolean(data.useMasterPrompt);
-    let assignedPromptContent: string | null = null;
-
-    if (!useMasterPrompt) {
-      const content = data.content?.trim() ?? '';
-      if (!content) {
-        throw new BadRequestException('Custom prompt content is required');
-      }
-
-      const existing = await this.prisma.promptVersion.findFirst({
-        where: { isPublished: true, ownerId: id },
-        orderBy: { publishedAt: 'desc' },
-      });
-      if (existing) {
-        await this.prisma.promptVersion.update({
-          where: { id: existing.id },
-          data: { content },
-        });
-      } else {
-        const latest = await this.prisma.promptVersion.findFirst({
-          where: { ownerId: id },
-          orderBy: { version: 'desc' },
-        });
-        await this.prisma.promptVersion.updateMany({
-          where: { ownerId: id },
-          data: { isPublished: false },
-        });
-        await this.prisma.promptVersion.create({
-          data: {
-            content,
-            version: (latest?.version || 0) + 1,
-            ownerId: id,
-            isPublished: true,
-            publishedAt: new Date(),
-          },
-        });
-      }
-      assignedPromptContent = content;
-    } else {
-      const existing = await this.prisma.promptVersion.findFirst({
-        where: { isPublished: true, ownerId: id },
-        orderBy: { publishedAt: 'desc' },
-        select: { content: true },
-      });
-      assignedPromptContent = existing?.content ?? null;
-    }
-
-    const updated = await this.prisma.user.update({
-      where: { id },
-      data: { useMasterPrompt },
-      include: {
-        managedByAdmin: {
-          select: { id: true, firstName: true, lastName: true, email: true },
-        },
-        profileAssignments: {
-          include: {
-            profile: {
-              select: { id: true, firstName: true, lastName: true, profileTitle: true },
-            },
-          },
-        },
-        templateAssignments: {
-          include: {
-            templateVersion: {
-              select: { id: true, name: true, isPublished: true, archivedAt: true },
-            },
-          },
-        },
-      },
-    });
-
-    await this.prisma.auditEvent.create({
-      data: {
-        actorId: actor.id,
-        action: 'BIDDER_PROMPT_ASSIGNMENT_UPDATED',
-        targetType: 'User',
-        targetId: id,
-        changesJson: {
-          useMasterPrompt,
-          contentUpdated: !useMasterPrompt,
-        },
-      },
-    });
-
-    return { ...publicUser(updated), assignedPromptContent };
+  async updatePromptAssignment(id: string, data: { useMasterPrompt: boolean; content?: string }, actor: AuthUser) {
+    if (id !== actor.id) throw new ForbiddenException('Prompts are private. Each user manages their own prompts in Settings.');
+    return this.settingsService.updateMyPromptSettings(actor, data.useMasterPrompt ? { resetToDefault: true } : { content: data.content });
   }
 
-  async updatePromptAssignments(
-    userId: string,
-    assignments: { promptVersionId: string; isDefault?: boolean }[],
-    actor: AuthUser,
-  ) {
-    if (!isStaff(actor.role)) throw new ForbiddenException();
-
-    const user = await this.prisma.user.findUnique({ where: { id: userId } });
-    if (!user) throw new NotFoundException('User not found');
-    if (user.role !== UserRole.BIDDER) {
-      throw new ForbiddenException('Prompts can only be assigned to bidders');
-    }
-    if (isAdmin(actor.role) && !isOwnedBidder(actor.id, user)) {
-      throw new ForbiddenException('You can only assign prompts to your own bidders');
-    }
-
-    this.validateAssignments(assignments, 'promptVersionId');
-    const ids = assignments.map((a) => a.promptVersionId);
-    await this.settingsService.assertAssignablePrompts(actor, ids);
-
-    const defaultIndex = Math.max(0, assignments.findIndex((a) => a.isDefault));
-    await this.prisma.user.update({
-      where: { id: userId },
-      data: {
-        useMasterPrompt: assignments.length === 0,
-        promptAssignments: {
-          deleteMany: {},
-          create: assignments.map((a, i) => ({ promptVersionId: a.promptVersionId, isDefault: i === defaultIndex })),
-        },
-      },
-    });
-
-    await this.prisma.auditEvent.create({
-      data: {
-        actorId: actor.id,
-        action: 'PROMPT_ASSIGNMENTS_UPDATED',
-        targetType: 'User',
-        targetId: userId,
-        changesJson: { assignments },
-      },
-    });
-
-    return publicUser(await this.prisma.user.findUnique({
-      where: { id: userId },
-      include: {
-        promptAssignments: {
-          include: {
-            promptVersion: { select: { id: true, name: true, isPublished: true } },
-          },
-          orderBy: [{ isDefault: 'desc' }, { createdAt: 'asc' }],
-        },
-      },
-    }));
+  async updatePromptAssignments(userId: string, assignments: { promptVersionId: string; isDefault?: boolean }[], actor: AuthUser) {
+    throw new ForbiddenException('Prompts are private. Manage your own generation setup in Settings.');
   }
 
   async updateAssignments(

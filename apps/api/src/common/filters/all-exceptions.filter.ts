@@ -25,6 +25,11 @@ export class AllExceptionsFilter implements ExceptionFilter {
       const res = exception.getResponse();
       message = typeof res === 'string' ? res : (res as { message?: string }).message || message;
     }
+    const databaseError = exception as { code?: string; meta?: { target?: string[] } } | null;
+    if (databaseError?.code === 'P2002' && databaseError.meta?.target?.includes('normalizedJobUrl')) {
+      status = HttpStatus.CONFLICT;
+      message = 'This profile already has an application for this job link.';
+    }
 
     this.logger.error(exception);
 
