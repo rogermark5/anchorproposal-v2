@@ -1,8 +1,15 @@
 import { desktopBridge } from './desktop-bridge';
 import { downloadFilename } from './download-filename';
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:3001';
+const API_URL = process.env.NEXT_PUBLIC_API_URL || '/backend';
 
 export type ExperienceTitleMode = 'saved' | 'tailored';
+export type DocumentKind = 'combined' | 'resume' | 'cover-letter';
+export type PrivatePrompt = { id: string; name: string; content: string; documentKind: DocumentKind; experienceTitleMode: ExperienceTitleMode; version: number; isPublished: boolean };
+export type GenerationWorkflow = {
+  mode: 'user' | 'profile' | 'separate'; defaultPrompt: PrivatePrompt; prompts: PrivatePrompt[];
+  profiles: { id: string; name: string; title: string | null; resumePromptId: string | null; coverLetterPromptId: string | null }[];
+  jsonRules: Record<DocumentKind, string>;
+};
 
 export type UserRole = 'MASTER' | 'ADMIN' | 'BIDDER';
 
@@ -20,6 +27,7 @@ export interface ManualGenerationPrompt {
   usedDefault: boolean;
   promptName: string;
   profileName: string;
+  coverLetterPrompt?: string | null;
 }
 
 export interface ApplicationOption {
@@ -47,6 +55,11 @@ class ApiClient {
   private accessToken: string | null = null;
   private refreshToken: string | null = null;
   private refreshPromise: Promise<void> | null = null;
+  private cache = new Map<string, { expires: number; value: unknown }>();
+  private pending = new Map<string, Promise<unknown>>();
+  private cacheEpoch = 0;
+
+  invalidateCache() { this.cache.clear(); this.pending.clear(); this.cacheEpoch++; }
 
   constructor() {
     if (typeof window !== 'undefined' && !desktopBridge()) {
@@ -56,6 +69,7 @@ class ApiClient {
   }
 
   setTokens(access: string, refresh: string) {
+    this.invalidateCache();
     this.accessToken = access;
     this.refreshToken = refresh;
     localStorage.setItem('accessToken', access);
@@ -63,6 +77,7 @@ class ApiClient {
   }
 
   clearTokens() {
+    this.invalidateCache();
     this.accessToken = null;
     this.refreshToken = null;
     localStorage.removeItem('accessToken');
@@ -96,6 +111,28 @@ class ApiClient {
   }
 
   private async request<T>(path: string, options: RequestInit = {}): Promise<T> {
+    const method = options.method || 'GET';
+    const cacheable = method === 'GET' && /^\/(profiles(?:\?|$)|templates(?:\?|$)|users(?:\?|$)|settings\/|dashboard\/|applications(?:\?|$))/.test(path) && !/preview/.test(path);
+    if (method !== 'GET') this.invalidateCache();
+    if (!cacheable) {
+      try { return await this.performRequest<T>(path, options); }
+      finally { if (method !== 'GET') this.invalidateCache(); }
+    }
+    const epoch = this.cacheEpoch;
+    const cached = this.cache.get(path);
+    if (cached && cached.expires > Date.now()) return structuredClone(cached.value) as T;
+    let pending = this.pending.get(path);
+    if (!pending) {
+      pending = this.performRequest<T>(path, options).then(value => {
+        if (epoch === this.cacheEpoch) this.cache.set(path, { value, expires: Date.now() + 15_000 });
+        return value;
+      }).finally(() => { if (epoch === this.cacheEpoch) this.pending.delete(path); });
+      this.pending.set(path, pending);
+    }
+    return structuredClone(await pending) as T;
+  }
+
+  private async performRequest<T>(path: string, options: RequestInit = {}): Promise<T> {
     const desktop = desktopBridge();
     if (desktop) {
       if (options.body instanceof FormData) {
@@ -522,6 +559,7 @@ class ApiClient {
 
   importManualGeneration(applicationId: string, data: {
     responseJson: string;
+    coverLetterResponseJson?: string;
     contextHash: string;
     templateId: string;
     idempotencyKey: string;
@@ -541,7 +579,23 @@ class ApiClient {
   }
 
   getGenerationPreview(id: string) {
-    return this.request<{ html: string; pageSize: 'A4' | 'LETTER' }>(`/generations/${id}/preview`);
+    return this.request<{ html: string; pageSize: 'A4' | 'LETTER'; coverLetterHtml?: string | null }>(`/generations/${id}/preview`);
+  }
+
+  createResumePublicLink(id: string) {
+    return this.request<{ path: string; expiresAt: string }>(`/generations/${id}/public-link`, { method: 'POST' });
+  }
+
+  revokeResumePublicLink(id: string) {
+    return this.request(`/generations/${id}/public-link`, { method: 'DELETE' });
+  }
+
+  getProfileGenerationPreference(id: string) {
+    return this.request<{ resumePromptId: string | null; coverLetterPromptId: string | null }>(`/profiles/${id}/generation-preference`);
+  }
+
+  saveProfileGenerationPreference(id: string, data: { resumePromptId: string | null; coverLetterPromptId: string | null }) {
+    return this.request(`/profiles/${id}/generation-preference`, { method: 'PUT', body: JSON.stringify(data) });
   }
 
   getGenerationAnswers(generationId: string) {
@@ -644,15 +698,15 @@ class ApiClient {
     >(`/settings/prompt-library?scope=${scope}`);
   }
 
-  createLibraryPrompt(data: { name: string; content: string; experienceTitleMode?: ExperienceTitleMode }) {
-    return this.request('/settings/prompt-library', {
+  createLibraryPrompt(data: { name: string; content: string; experienceTitleMode?: ExperienceTitleMode; documentKind?: DocumentKind }) {
+    return this.request<PrivatePrompt>('/settings/prompt-library', {
       method: 'POST',
       body: JSON.stringify(data),
     });
   }
 
-  updateLibraryPrompt(id: string, data: { name?: string; content?: string; experienceTitleMode?: ExperienceTitleMode }) {
-    return this.request(`/settings/prompt-library/${id}`, {
+  updateLibraryPrompt(id: string, data: { name?: string; content?: string; experienceTitleMode?: ExperienceTitleMode; documentKind?: DocumentKind }) {
+    return this.request<PrivatePrompt>(`/settings/prompt-library/${id}`, {
       method: 'PATCH',
       body: JSON.stringify(data),
     });
@@ -665,11 +719,15 @@ class ApiClient {
   }
 
   getPromptMode() {
-    return this.request<{ mode: 'user' | 'profile' }>('/settings/prompt-mode');
+    return this.request<{ mode: 'user' | 'profile' | 'separate' }>('/settings/prompt-mode');
   }
 
-  updatePromptMode(mode: 'user' | 'profile') {
-    return this.request<{ mode: 'user' | 'profile' }>('/settings/prompt-mode', {
+  getGenerationWorkflow() {
+    return this.request<GenerationWorkflow>('/settings/generation-workflow');
+  }
+
+  updatePromptMode(mode: 'user' | 'profile' | 'separate') {
+    return this.request<{ mode: 'user' | 'profile' | 'separate' }>('/settings/prompt-mode', {
       method: 'PATCH',
       body: JSON.stringify({ mode }),
     });
@@ -677,7 +735,7 @@ class ApiClient {
 
   getProfilePromptAssignments(profileId: string) {
     return this.request<{
-      mode: 'user' | 'profile';
+      mode: 'user' | 'profile' | 'separate';
       profile: { id: string; firstName: string; lastName: string; promptVersionId?: string | null };
       prompts: {
         id: string;
@@ -739,7 +797,7 @@ class ApiClient {
       role: 'MASTER' | 'ADMIN' | 'BIDDER';
       useMasterPrompt: boolean | null;
       promptSource?: 'initial' | 'custom' | null;
-      assignmentMode?: 'user' | 'profile';
+      assignmentMode?: 'user' | 'profile' | 'separate';
       masterPrompt: { id: string; name?: string; content: string; version: number; isPublished: boolean } | null;
       myPrompt: { id: string; name?: string; content: string; version: number; isPublished: boolean } | null;
       myPrompts?: { id: string; name: string; content: string; version?: number; isPublished?: boolean }[];
@@ -751,7 +809,7 @@ class ApiClient {
   }
 
   updateMyPrompt(data: {
-    mode?: 'user' | 'profile';
+    mode?: 'user' | 'profile' | 'separate';
     content?: string;
     resetToDefault?: boolean;
   }) {
@@ -759,7 +817,7 @@ class ApiClient {
       role: 'MASTER' | 'ADMIN' | 'BIDDER';
       useMasterPrompt: boolean | null;
       promptSource?: 'initial' | 'custom' | null;
-      assignmentMode?: 'user' | 'profile';
+      assignmentMode?: 'user' | 'profile' | 'separate';
       masterPrompt: { id: string; name?: string; content: string; version: number; isPublished: boolean } | null;
       myPrompt: { id: string; name?: string; content: string; version: number; isPublished: boolean } | null;
       myPrompts?: { id: string; name: string; content: string }[];

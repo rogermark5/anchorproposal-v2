@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Param, Body, UseGuards, Req, Query, Res } from '@nestjs/common';
+import { Controller, Get, Post, Delete, Param, Body, UseGuards, Req, Query, Res } from '@nestjs/common';
 import type { Response } from 'express';
 import { GenerationsService, ManualGenerationInput } from './generations.service';
 import { AnswersService } from './answers.service';
@@ -91,6 +91,16 @@ export class GenerationsController {
   @Get('generations/:id/preview')
   previewHtml(@Param('id') id: string, @Req() req: { user: AuthUser }) {
     return this.generationsService.previewHtml(id, req.user);
+  }
+
+  @Post('generations/:id/public-link')
+  share(@Param('id') id: string, @Req() req: { user: AuthUser }) {
+    return this.generationsService.createPublicLink(id, req.user);
+  }
+
+  @Delete('generations/:id/public-link')
+  revoke(@Param('id') id: string, @Req() req: { user: AuthUser }) {
+    return this.generationsService.revokePublicLink(id, req.user);
   }
 
   @Get('generations/:id/answers')

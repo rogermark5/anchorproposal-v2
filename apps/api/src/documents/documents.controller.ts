@@ -17,6 +17,7 @@ import { AuthUser } from '../common/types/auth.types';
 import { isAdmin, isMaster } from '../common/utils/roles.util';
 import { COVER_LETTER_UNAVAILABLE, usableCoverLetter } from '../deepseek/cover-letter';
 import { documentAttachmentHeader, documentDownloadFilename } from './download-filename';
+import { hasProfileIdentityConflict } from '../generations/profile-output';
 
 @Controller('documents')
 @UseGuards(JwtAuthGuard)
@@ -63,6 +64,10 @@ export class DocumentsController {
 
     if (file.kind === 'COVER_LETTER' && !usableCoverLetter((file.generation.structuredOutputJson as { coverLetter?: unknown } | null)?.coverLetter)) {
       throw new BadRequestException(COVER_LETTER_UNAVAILABLE);
+    }
+    const snapshot = file.generation.profileSnapshotJson as { firstName?: string; lastName?: string } | null;
+    if (hasProfileIdentityConflict(file.generation.structuredOutputJson as any, snapshot)) {
+      throw new BadRequestException('This old file may contain another candidate’s identity. Export the document again from its preview to use the saved profile.');
     }
     const exists = await this.storage.fileExists(file.storagePath);
     if (!exists) throw new NotFoundException('File not found on disk');

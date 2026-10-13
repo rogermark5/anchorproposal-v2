@@ -65,6 +65,18 @@ export class ProfilesController {
     return this.profilesService.findOne(id, req.user);
   }
 
+  @Get(':id/generation-preference')
+  generationPreference(@Param('id') id: string, @Req() req: { user: AuthUser }) {
+    return this.profilesService.getGenerationPreference(id, req.user);
+  }
+
+  @Put(':id/generation-preference')
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.ADMIN, UserRole.BIDDER)
+  saveGenerationPreference(@Param('id') id: string, @Req() req: { user: AuthUser }, @Body() body: { resumePromptId?: string | null; coverLetterPromptId?: string | null }) {
+    return this.profilesService.saveGenerationPreference(id, req.user, body);
+  }
+
   @Post()
   @UseGuards(RolesGuard)
   @Roles(UserRole.ADMIN)

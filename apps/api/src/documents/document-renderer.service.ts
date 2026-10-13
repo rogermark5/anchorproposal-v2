@@ -13,6 +13,9 @@ import {
 } from '@anchorproposal/shared';
 import { TemplatesService } from '../templates/templates.service';
 import { StorageService } from '../storage/storage.service';
+import { coverLetterContactLines, coverLetterDate, renderCoverLetterHtml } from './cover-letter-layout';
+import { usableCoverLetter } from '../deepseek/cover-letter';
+import { resumeHeadline } from '../common/utils/resume-headline';
 import * as puppeteer from 'puppeteer';
 import { Document, Packer, Paragraph, TextRun, AlignmentType, BorderStyle, PageBorderOffsetFrom } from 'docx';
 
@@ -111,7 +114,7 @@ export class DocumentRendererService {
       (templateConfig as { layout?: { headerAlignment?: string } }).layout?.headerAlignment === 'center'
         ? AlignmentType.CENTER
         : AlignmentType.LEFT;
-    const contact = { ...(content.contact || { name: 'Candidate' }), ...(content.experiences?.length ? { title: experienceTitle(content.experiences[0]) } : {}) };
+    const contact = { ...content.contact, title: resumeHeadline(content.experiences, content.contact?.title) };
     const visibility = cfg.sections?.visibility || {};
     const order = cfg.sections?.order?.length
       ? cfg.sections.order
@@ -121,10 +124,6 @@ export class DocumentRendererService {
       new Paragraph({
         keepNext: true,
         spacing: { before: Math.round((cfg.layout?.sectionSpacing ?? 16) * 15), after: 80 },
-        ...(cfg.styles?.sectionHeadingStyle === 'underline' && cfg.styles?.showDividers !== false
-          ? { border: { bottom: { style: BorderStyle.SINGLE, size: 4, color: hex(cfg.colors?.divider, 'cbd5e1') } } } : {}),
-        ...(cfg.styles?.sectionHeadingStyle === 'bar'
-          ? { border: { left: { style: BorderStyle.SINGLE, size: 18, space: 6, color: hex(cfg.colors?.primary, '1e3a5f') } } } : {}),
         ...(cfg.styles?.sectionHeadingStyle === 'background'
           ? { shading: { fill: hex(cfg.colors?.sectionLabelBg, 'f1f5f9') } } : {}),
         children: [
@@ -167,6 +166,7 @@ export class DocumentRendererService {
       cfg.contact?.showEmail !== false ? contact.email : '',
       cfg.contact?.showPhone !== false ? contact.phone : '',
       cfg.contact?.showLinkedin !== false ? contact.linkedin : '',
+      ...(contact.links || []).filter(link => link.url !== contact.linkedin).map(link => link.url),
     ]
       .filter(Boolean)
       .join(` ${cfg.layout?.contactSeparator || '·'} `);
@@ -286,10 +286,6 @@ export class DocumentRendererService {
           properties: {
             page: {
               size: box.pageSize === 'A4' ? { width: 11906, height: 16838 } : { width: 12240, height: 15840 },
-              borders: {
-                pageBorders: { offsetFrom: PageBorderOffsetFrom.TEXT },
-                ...Object.fromEntries(['pageBorderTop', 'pageBorderRight', 'pageBorderBottom', 'pageBorderLeft'].map((side) => [side, { style: BorderStyle.SINGLE, size: 4, space: 12, color: hex(cfg.colors?.divider, 'cbd5e1') }])),
-              },
               margin: {
                 top: pxToTwip(box.marginTop + 16),
                 bottom: pxToTwip(box.marginBottom + 16),
@@ -357,11 +353,17 @@ export class DocumentRendererService {
       closing: string;
       signatureName: string;
       company: string;
+      contact?: PromptResumeContent['contact'];
+      jobTitle?: string;
+      date?: string;
     },
     baseFilename: string,
     templateConfig: object = {},
     formats: Array<'PDF' | 'DOCX'> = ['PDF', 'DOCX'],
   ) {
+    const normalized = usableCoverLetter(cover, cover.contact?.name || cover.signatureName);
+    if (!normalized) throw new Error('The cover letter is missing valid content.');
+    cover = { ...cover, ...normalized, signatureName: normalized.signatureName || cover.signatureName };
     const cfg = templateConfigSchema.parse(templateConfig) as {
       colors?: { primary?: string; heading?: string; body?: string };
       typography?: { bodyFont?: string; baseFontSize?: number; lineHeight?: number };
@@ -374,37 +376,20 @@ export class DocumentRendererService {
     const lineHeight = cfg.typography?.lineHeight || 1.6;
 
     const coverBase = `${baseFilename}_CoverLetter`;
-    const dateStr = new Date().toLocaleDateString('en-US', {
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric',
-    });
-    const esc = (value: unknown) =>
-      String(value ?? '')
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;');
-    const bodyHtml = cover.paragraphs
-      .map((p) => `<p style="margin: 0 0 14px;">${esc(p)}</p>`)
-      .join('');
-    const safeFont = String(font).replace(/["\\;{}]/g, '').trim() || 'Georgia';
-
-    const html = `
-      <html><head><meta charset="utf-8" /></head>
-      <body style="font-family: &quot;${safeFont}&quot;, Georgia, serif; font-size: ${fontSize}pt; line-height: ${lineHeight}; color: ${bodyColor}; margin: 0;">
-        <p style="margin: 0 0 20px; color: ${headingColor};">${esc(dateStr)}</p>
-        <p style="margin: 0 0 20px; color: ${headingColor};">Hiring Manager<br/>${esc(cover.company)}</p>
-        <p style="margin: 0 0 16px; color: ${headingColor};">${esc(cover.greeting)}</p>
-        ${bodyHtml}
-        <p style="margin: 20px 0 0; color: ${headingColor};">${esc(cover.closing)}</p>
-        <p style="margin: 8px 0 0; color: ${primary}; font-weight: 600;">${esc(cover.signatureName)}</p>
-      </body></html>`;
+    const dateStr = coverLetterDate(cover.date);
+    const contact = cover.contact || { name: cover.signatureName };
+    const html = renderCoverLetterHtml({ ...cover, contact }, templateConfig);
 
     const docxChildren: Paragraph[] = [
+      new Paragraph({ spacing: { after: 90 }, children: [new TextRun({ text: contact.name, bold: true, size: 40, color: primary.replace('#', '') })] }),
+      ...(contact.title ? [new Paragraph({ spacing: { after: 100 }, children: [new TextRun({ text: contact.title, bold: true, size: 22 })] })] : []),
+      ...coverLetterContactLines(contact).map(line => new Paragraph({ spacing: { after: 40 }, children: [new TextRun({ text: line, size: 18 })] })),
+      new Paragraph({ spacing: { after: 200 }, children: [] }),
       new Paragraph({ children: [new TextRun({ text: dateStr, color: headingColor.replace('#', '') })] }),
       new Paragraph({ children: [] }),
       new Paragraph({ children: [new TextRun('Hiring Manager')] }),
       new Paragraph({ children: [new TextRun(cover.company)] }),
+      ...(cover.jobTitle ? [new Paragraph({ spacing: { before: 120, after: 180 }, children: [new TextRun({ text: 'Application for ' + cover.jobTitle, bold: true })] })] : []),
       new Paragraph({ children: [] }),
       new Paragraph({ children: [new TextRun(cover.greeting)] }),
       new Paragraph({ children: [] }),
@@ -413,7 +398,7 @@ export class DocumentRendererService {
         new Paragraph({ children: [] }),
       ]),
       new Paragraph({ children: [new TextRun(cover.closing)] }),
-      new Paragraph({ children: [new TextRun({ text: cover.signatureName, bold: true })] }),
+      new Paragraph({ children: [new TextRun({ text: contact.name, bold: true })] }),
     ];
 
     const box = this.templatesService.pdfLayout(templateConfig);

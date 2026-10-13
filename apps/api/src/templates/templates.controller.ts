@@ -24,8 +24,6 @@ export class TemplatesController {
   }
 
   @Post('preview')
-  @UseGuards(RolesGuard)
-  @Roles(UserRole.ADMIN)
   previewConfig(@Body() body: { configJson?: object }) {
     return {
       html: this.templatesService.renderPreviewHtml(
@@ -52,13 +50,12 @@ export class TemplatesController {
   }
 
   @Post(':id/preview')
-  @UseGuards(RolesGuard)
-  @Roles(UserRole.ADMIN)
   async previewDraft(
     @Param('id') id: string,
     @Body() body: { configJson?: object },
+    @Req() req: { user: AuthUser },
   ) {
-    const template = await this.templatesService.findOne(id);
+    const template = await this.templatesService.checkAccess(id, req.user);
     const config = body?.configJson ?? (template.configJson as object);
     return {
       html: this.templatesService.renderPreviewHtml(
@@ -69,15 +66,13 @@ export class TemplatesController {
   }
 
   @Put(':id')
-  @UseGuards(RolesGuard)
-  @Roles(UserRole.ADMIN)
-  update(@Param('id') id: string, @Body() body: { name?: string; configJson?: object }) {
-    return this.templatesService.update(id, body);
+  update(@Param('id') id: string, @Body() body: { name?: string; configJson?: object }, @Req() req: { user: AuthUser }) {
+    return this.templatesService.customize(id, req.user, body);
   }
 
   @Patch(':id/set-default')
   @UseGuards(RolesGuard)
-  @Roles(UserRole.ADMIN)
+  @Roles(UserRole.ADMIN, UserRole.BIDDER)
   setDefault(@Param('id') id: string, @Req() req: { user: AuthUser }) {
     return this.templatesService.setDefaultTemplate(id, req.user);
   }

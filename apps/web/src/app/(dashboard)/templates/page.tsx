@@ -43,8 +43,8 @@ function markDefaultInPlace(list: Template[], defaultId: string | null): Templat
 }
 
 function TemplatesDashboardInner() {
-  const { isAdmin } = useAuth();
-  const canManageTemplates = isAdmin;
+  const { isAdmin, canBid } = useAuth();
+  const canManageTemplates = isAdmin || canBid;
   const router = useRouter();
   const searchParams = useSearchParams();
   const initialIdRef = useRef(searchParams.get('id'));
@@ -163,7 +163,7 @@ function TemplatesDashboardInner() {
         if (token !== previewToken.current) return;
         setPreviewHtml(preview.html);
         if (typeof window !== 'undefined') {
-          if (searchParams.get('id') !== selectedId) router.replace(`/templates?id=${encodeURIComponent(selectedId)}`);
+          if (searchParams.get('id') !== selectedId) window.history.replaceState(null, '', `/templates?id=${encodeURIComponent(selectedId)}`);
         }
       } catch (err) {
         if (token === previewToken.current) {
@@ -236,7 +236,7 @@ function TemplatesDashboardInner() {
               : 'Browse published templates available for generation.'}
           </p>
         </div>
-        {canManageTemplates && (
+        {isAdmin && (
           <div className={styles.actions}>
             <button
               type="button"

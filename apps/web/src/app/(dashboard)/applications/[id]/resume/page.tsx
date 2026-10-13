@@ -6,6 +6,7 @@ import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { toast } from 'sonner';
 import { api } from '@/lib/api';
+import { GenerationPreviewDialog } from '@/components/generation-preview-dialog';
 import { ArrowLeft, Download, Copy, Sparkles, RefreshCw } from 'lucide-react';
 import { DefaultPromptWarning } from '@/components/default-prompt-warning';
 import { TemplatePreviewFrame } from '@/components/template-preview-frame';
@@ -22,13 +23,15 @@ export default function ResumePreviewPage() {
     null,
   );
   const [previewHtml, setPreviewHtml] = useState('');
+  const [coverPreviewHtml, setCoverPreviewHtml] = useState('');
   const [previewPage, setPreviewPage] = useState('LETTER');
+  const [showDownloadPreview, setShowDownloadPreview] = useState(false);
 
   const load = () => {
-    api.getApplication(id).then((data) => {
+    return api.getApplication(id).then((data) => {
       setApp(data);
       const gens = (data.generations as Record<string, unknown>[]) || [];
-      if (gens.length > 0) setSelectedGen(gens[0]);
+      if (gens.length > 0) setSelectedGen(previous => gens.find(gen => gen.id === previous?.id) || gens[0]);
     });
   };
 
@@ -36,6 +39,7 @@ export default function ResumePreviewPage() {
     const genId = selectedGen?.id as string | undefined;
     if (!genId || selectedGen?.status !== 'COMPLETED') {
       setPreviewHtml('');
+      setCoverPreviewHtml('');
       return;
     }
     let cancelled = false;
@@ -44,10 +48,11 @@ export default function ResumePreviewPage() {
       .then((data) => {
         if (cancelled) return;
         setPreviewHtml(data.html);
+        setCoverPreviewHtml(data.coverLetterHtml || '');
         setPreviewPage(data.pageSize || 'LETTER');
       })
       .catch(() => {
-        if (!cancelled) setPreviewHtml('');
+        if (!cancelled) { setPreviewHtml(''); setCoverPreviewHtml(''); }
       });
     return () => {
       cancelled = true;
@@ -68,7 +73,7 @@ export default function ResumePreviewPage() {
 
   const pollGeneration = async (
     generationId: string,
-    maxAttempts = 90,
+    maxAttempts = 240,
   ): Promise<{ status: string; errorMessage?: string | null }> => {
     for (let i = 0; i < maxAttempts; i++) {
       await new Promise((r) => setTimeout(r, 2000));
@@ -84,7 +89,6 @@ export default function ResumePreviewPage() {
       } catch {
         /* keep polling */
       }
-      load();
     }
     return { status: 'FAILED', errorMessage: 'Generation timed out — check status on this page' };
   };
@@ -102,6 +106,8 @@ export default function ResumePreviewPage() {
       await load();
       if (terminal.status === 'COMPLETED') {
         toast.success('Resume regenerated');
+        setSelectedGen(await api.getGeneration(started.id));
+        setShowDownloadPreview(true);
       } else if (terminal.status === 'FAILED') {
         toast.error(terminal.errorMessage || 'Generation failed');
       }
@@ -137,13 +143,14 @@ export default function ResumePreviewPage() {
   if (!app) return <div className="p-4 sm:p-6 lg:p-8">Loading...</div>;
 
   const generations = (app.generations as Record<string, unknown>[]) || [];
-  const rawOutput = selectedGen?.structuredOutputJson as Record<string, unknown> | undefined;
+  const rawOutput = (selectedGen?.requiresRegeneration ? undefined : selectedGen?.structuredOutputJson) as Record<string, unknown> | undefined;
   const content = (rawOutput?.resume as Record<string, unknown> | undefined) || rawOutput;
   const coverLetter = rawOutput?.coverLetter as Record<string, unknown> | undefined;
   const files = (selectedGen?.files as Record<string, unknown>[]) || [];
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 min-h-0 flex flex-col h-[calc(100dvh-3.5rem)] md:h-screen">
+      {showDownloadPreview && <GenerationPreviewDialog applicationId={id} initialGenerationId={selectedGen?.id as string} onClose={() => setShowDownloadPreview(false)} />}
       <Link href={`/applications/${id}`} className="flex items-center gap-2 text-sm text-slate-500 hover:text-primary mb-4 shrink-0">
         <ArrowLeft className="w-4 h-4" /> Back to Application
       </Link>
@@ -195,7 +202,7 @@ export default function ResumePreviewPage() {
           {!content ? (
             <div className="flex flex-col items-center justify-center h-full text-slate-500">
               <Sparkles className="w-12 h-12 mb-4 text-slate-300" />
-              <p>No resume content yet. Generate a resume to see the preview.</p>
+              <p>{selectedGen?.requiresRegeneration ? 'This old resume contains conflicting profile information. Generate a new version using the saved profile.' : 'No resume content yet. Generate a resume to see the preview.'}</p>
             </div>
           ) : (
             <div className="max-w-3xl mx-auto">
@@ -204,15 +211,10 @@ export default function ResumePreviewPage() {
               ) : (
                 <p className="text-sm text-slate-500 mb-4">Loading the template preview…</p>
               )}
-              {coverLetter && (
+              {coverPreviewHtml && (
                 <div className="mt-10 pt-6 border-t border-[var(--border)]">
                   <h2 className="text-sm font-bold text-slate-800 mb-3">Cover Letter</h2>
-                  <p className="text-sm text-slate-700 mb-3">{coverLetter.greeting as string}</p>
-                  {((coverLetter.paragraphs as string[]) || []).map((p, i) => (
-                    <p key={i} className="text-sm text-slate-600 mb-3">{p}</p>
-                  ))}
-                  <p className="text-sm text-slate-700">{coverLetter.closing as string}</p>
-                  <p className="text-sm font-medium text-slate-800 mt-1">{coverLetter.signatureName as string}</p>
+                  <TemplatePreviewFrame html={coverPreviewHtml} pageSize={previewPage} />
                 </div>
               )}
             </div>
@@ -221,6 +223,7 @@ export default function ResumePreviewPage() {
 
         <div className="w-48 shrink-0 space-y-2">
           <h3 className="text-sm font-medium text-slate-700 mb-3">File Actions</h3>
+          {selectedGen?.status === 'COMPLETED' && <button className="w-full rounded-lg bg-primary text-white px-3 py-2 text-sm" onClick={() => setShowDownloadPreview(true)}>Preview, download both and share</button>}
           {selectedGen?.status === 'COMPLETED' &&
             (
               [
@@ -247,18 +250,6 @@ export default function ResumePreviewPage() {
                 {label}
               </button>
             ))}
-          {files
-            .filter((f) => f.type === 'PDF' || f.type === 'DOCX')
-            .map((f) => (
-            <button
-              key={f.id as string}
-              onClick={() => handleDownload(f.id as string, f.filename as string)}
-              className="w-full flex items-center gap-2 px-3 py-2 border border-slate-300 rounded-lg text-sm hover:bg-slate-50"
-            >
-              <Download className="w-4 h-4" />
-              {(f.kind as string) === 'COVER_LETTER' ? 'Cover' : 'Resume'} {f.type as string}
-            </button>
-          ))}
           {content && (
             <button
               onClick={() => navigator.clipboard.writeText(JSON.stringify(content, null, 2))}

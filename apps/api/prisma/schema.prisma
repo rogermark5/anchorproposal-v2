@@ -131,6 +131,8 @@ model User {
   auditEvents        AuditEvent[]
   ownedPrompts       PromptVersion[]     @relation("PromptOwner")
   authSessions       AuthSession[]
+  generationPreferences ProfileGenerationPreference[]
+  templateCustomizations UserTemplateCustomization[]
 
   @@index([managedByAdminId])
   @@map("users")
@@ -213,6 +215,7 @@ model Profile {
   applications  Application[]
   assignedPrompt PromptVersion? @relation("ProfileAssignedPrompt", fields: [promptVersionId], references: [id], onDelete: SetNull)
   profilePromptAssignments ProfilePromptAssignment[]
+  generationPreferences ProfileGenerationPreference[]
 
   @@map("profiles")
 }
@@ -310,6 +313,7 @@ model Application {
   workArrangement  WorkArrangement   @default(UNKNOWN)
   source           String?
   jobUrl           String?
+  normalizedJobUrl String?
   jobDescription   String            @db.Text
   status           ApplicationStatus @default(SAVED)
   followUpDate     DateTime?
@@ -323,6 +327,7 @@ model Application {
   statusHistory  ApplicationStatusHistory[]
   generations    ResumeGeneration[]
 
+  @@unique([profileId, normalizedJobUrl])
   @@index([normalizedCompany, profileId])
   @@index([status])
   @@index([bidderId])
@@ -376,6 +381,8 @@ model PromptVersion {
   name        String    @default("Prompt")
   content     String    @db.Text
   experienceTitleMode String @default("saved")
+  documentKind String @default("combined")
+  sourcePromptId String?
   version     Int       @default(1)
   isPublished Boolean   @default(false)
   isInitial   Boolean   @default(false)
@@ -392,6 +399,7 @@ model PromptVersion {
   profilePromptAssignments ProfilePromptAssignment[]
   assignedProfiles Profile[] @relation("ProfileAssignedPrompt")
 
+  @@unique([ownerId, sourcePromptId])
   @@index([ownerId])
   @@map("prompt_versions")
 }
@@ -440,6 +448,7 @@ model TemplateVersion {
   updatedAt   DateTime  @updatedAt
   generations ResumeGeneration[]
   assignments TemplateAssignment[]
+  customizations UserTemplateCustomization[]
 
   @@map("template_versions")
 }
@@ -477,6 +486,10 @@ model ResumeGeneration {
   createdAt            DateTime         @default(now())
   updatedAt            DateTime         @updatedAt
   completedAt          DateTime?
+  promptSnapshot       String?          @db.Text
+  coverLetterPromptSnapshot String?     @db.Text
+  templateConfigSnapshotJson Json?
+  publicShareNonce      String?
 
   application     Application      @relation(fields: [applicationId], references: [id], onDelete: Cascade)
   creator         User             @relation(fields: [creatorId], references: [id])
@@ -487,6 +500,30 @@ model ResumeGeneration {
 
   @@index([applicationId])
   @@map("resume_generations")
+}
+
+model ProfileGenerationPreference {
+  id String @id @default(uuid())
+  userId String
+  profileId String
+  resumePromptId String?
+  coverLetterPromptId String?
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  profile Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  @@unique([userId, profileId])
+  @@map("profile_generation_preferences")
+}
+
+model UserTemplateCustomization {
+  id String @id @default(uuid())
+  userId String
+  templateVersionId String
+  name String?
+  configJson Json
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  templateVersion TemplateVersion @relation(fields: [templateVersionId], references: [id], onDelete: Cascade)
+  @@unique([userId, templateVersionId])
+  @@map("user_template_customizations")
 }
 
 model GenerationTurn {

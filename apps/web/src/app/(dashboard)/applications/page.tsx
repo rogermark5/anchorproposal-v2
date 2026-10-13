@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { toast } from 'sonner';
 import { api } from '@/lib/api';
+import { GenerationPreviewDialog } from '@/components/generation-preview-dialog';
 import type { ApplicationOption } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
 import { STATUS_COLORS, formatStatus, formatDate, truncateText, hasRealJobUrl, PLACEHOLDER_JOB_URL, cn, APPLICATION_STATUSES } from '@/lib/utils';
@@ -399,6 +400,8 @@ function ApplicationsPageInner() {
   const [page, setPage] = useState(1);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
+  const hasLoaded = useRef(false);
+  const [previewFor, setPreviewFor] = useState<{ applicationId: string; initialGenerationId?: string } | null>(null);
 
   const [showCreate, setShowCreate] = useState(false);
   const [editApp, setEditApp] = useState<Application | null>(null);
@@ -542,10 +545,10 @@ function ApplicationsPageInner() {
   const listRequest = useRef(0);
   const load = useCallback(async () => {
     const request = ++listRequest.current;
-    setLoading(true);
+    if (!hasLoaded.current) setLoading(true);
     try {
       const data = (await api.getApplications(buildListParams())) as Application[];
-      if (request === listRequest.current) setApps(data);
+      if (request === listRequest.current) { setApps(data); hasLoaded.current = true; }
     } catch (err) {
       if (request === listRequest.current) toast.error(err instanceof Error ? err.message : 'Failed to load applications');
     } finally {
@@ -554,7 +557,7 @@ function ApplicationsPageInner() {
   }, [buildListParams]);
 
   useEffect(() => {
-    const refresh = () => { if (canBid) void load(); };
+    const refresh = () => { if (canBid) { api.invalidateCache(); void load(); } };
     window.addEventListener('focus', refresh);
     const off = (window as any).anchor?.onEvent((event: any) => {
       if (event.type === 'data-changed' && /^\/(applications|generations)/.test(event.route) || event.type === 'job' && event.job?.stage === 'completed') refresh();
@@ -702,7 +705,7 @@ function ApplicationsPageInner() {
     if (savedToast) toast.success('Application saved');
   }, []);
 
-  const pollGeneration = useCallback(async (generationId: string, maxAttempts = 90) => {
+  const pollGeneration = useCallback(async (generationId: string, maxAttempts = 240) => {
     for (let i = 0; i < maxAttempts; i++) {
       await new Promise((r) => setTimeout(r, 2000));
       try {
@@ -753,18 +756,11 @@ function ApplicationsPageInner() {
         );
         const terminal = await pollGeneration(started.id);
         if (terminal.status === 'COMPLETED') {
-          setPostCreate((prev) =>
-            prev
-              ? {
-                  ...prev,
-                  phase: 'download',
-                  generationStatus: 'COMPLETED',
-                  generationId: started.id,
-                }
-              : prev,
-          );
+          setPostCreate(null);
+          setPreviewFor({ applicationId: appId, initialGenerationId: started.id });
+          api.invalidateCache();
           await load();
-          toast.success('Resume is ready. Choose a file to download.');
+          toast.success('Resume and cover letter are ready to preview.');
         } else {
           toast.error(terminal.errorMessage || 'Generation failed');
           setPostCreate(null);
@@ -837,12 +833,11 @@ function ApplicationsPageInner() {
 
   const completeManualGeneration = (generationId: string) => {
     if (!manualFor) return;
-    setPostCreate({
-      ...manualFor, warnings: [], phase: 'download', generationStatus: 'COMPLETED', generationId,
-    });
+    setPostCreate(null);
+    setPreviewFor({ applicationId: manualFor.appId, initialGenerationId: generationId });
     setManualFor(null);
     void load();
-    toast.success('Resume saved. Choose a file to download.');
+    toast.success('Documents saved and ready to preview.');
   };
 
   const handleEdit = async () => {
@@ -927,11 +922,9 @@ function ApplicationsPageInner() {
           : 'Cover letter DOCX';
     setBuildingFile({ key, label });
     try {
-      const file = existingId
-        ? { id: existingId, filename }
-        : await api.exportGenerationFile(generationId, { kind, type });
+      const file = await api.exportGenerationFile(generationId, { kind, type });
       await downloadFile(file.id, file.filename || filename);
-      if (!existingId) {
+      {
         const field =
           kind === 'RESUME'
             ? type === 'PDF'
@@ -1232,6 +1225,14 @@ function ApplicationsPageInner() {
                       <td className="px-2 py-2">
                         <div className="flex items-center gap-0.5">
                           <IconBtn
+                            title="Preview resume and cover letter"
+                            disabled={!app.latestGenerationId}
+                            onClick={() => setPreviewFor({ applicationId: app.id })}
+                            className="text-primary hover:bg-slate-100"
+                          >
+                            <Eye className="w-3.5 h-3.5" />
+                          </IconBtn>
+                          <IconBtn
                             title="Resume DOCX"
                             disabled={!app.latestGenerationId || buildingFile?.key === `${app.latestGenerationId}:RESUME:DOCX`}
                             onClick={() =>
@@ -1521,6 +1522,7 @@ function ApplicationsPageInner() {
         </div>
       )}
 
+      {previewFor && <GenerationPreviewDialog {...previewFor} onClose={() => setPreviewFor(null)} />}
       {/* Delete confirm */}
       {deleteApp && (
         <div

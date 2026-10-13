@@ -137,8 +137,8 @@ packages/
 - Duplicate company detection
 - Configurable warning rules (clearance, remote, etc.)
 - Async AI resume **and cover letter** generation via DeepSeek (JSON → PDF/DOCX using the chosen template)
-- Master/Admin configure DeepSeek API key and model under Settings → AI Provider
-- Master creates and publishes the initial prompt under Settings (no auto-seed); prompt must request both `resume` and `coverLetter` JSON
+- Master configures the platform DeepSeek API key and model under Settings → AI Provider.
+- Every user owns their resume, cover-letter and application-answer prompts. Existing shared instructions are preserved as independent private copies.
 - PDF, DOCX, and TXT document output
 - Resume template designer with live preview
 - Application status tracking with timeline
@@ -147,6 +147,22 @@ packages/
 ## Environment Variables
 
 See `.env.example` for all configuration options.
+
+## Resume generation
+
+Apply database migrations with `pnpm db:migrate` before starting an updated build. Production startup (`pnpm build`, then `pnpm start`) serves the web app at `http://127.0.0.1:3100`; local development uses port 3000.
+
+Settings → Resume & cover letter shows three generation ways. Way 1 has one private prompt for all profiles. Way 2 lets you select a profile and create or choose its combined resume + cover-letter prompt. Way 3 shows separate resume and cover-letter selectors for the selected profile. Save the setup to activate that way; repeat profile assignments for other profiles. The profile detail page links directly to this setup. Separate mode makes the resume request first and the cover-letter request second. Manual generation provides both prompts and accepts separate JSON responses.
+
+The application appends mandatory JSON rules to every resume and cover-letter prompt, including custom, manual, streamed and repair requests. It validates output before saving, retries malformed provider JSON up to three times, and attempts one repair for invalid resume structure. Invalid results are rejected instead of becoming completed documents. You write the instructions; the application manages the output contract.
+
+The database profile controls the candidate name, contact details, headline, links, skills, employers, dates, and qualification facts. Prompt examples and generated JSON cannot replace these fields. Conflicting employer histories are rejected. Older resume versions with conflicting identities or employers must be regenerated before preview, export, answers, or public sharing.
+
+After generation, the preview lets you choose a resume version, review both documents, and download both in PDF or DOCX. The Applications table also has a preview button. Template customizations and default selections belong to the current user; shared template records stay unchanged. Generated versions retain their template configuration, and exported documents have no page or section borders.
+
+Cover letters include the saved candidate name, headline, contact details, date, company and role. Their preview, PDF and Word exports use the same professional structure. Closing blocks and signatures pasted into body paragraphs are removed, and the saved candidate signs the letter once.
+
+Job links are validated per profile, ignoring URL fragments and common tracking parameters while preserving job identifiers. Public resume links are encrypted, expire after 30 days, and can be revoked by the resume creator. Configure `RESUME_SHARE_SECRET` with at least 24 characters, or use an existing `JWT_SECRET` of that length. Public pages expose the rendered resume and do not include the cover letter or application data.
 
 ## API Endpoints
 

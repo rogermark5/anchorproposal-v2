@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useRef, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
@@ -195,11 +195,13 @@ export default function ProfilesPage() {
   const [settingDefaultId, setSettingDefaultId] = useState<string | null>(null);
   const [assignProfile, setAssignProfile] = useState<Profile | null>(null);
 
+  const loadedOnce = useRef(false);
   const loadProfiles = useCallback(async () => {
-    setLoading(true);
+    if (!loadedOnce.current) setLoading(true);
     try {
       const data = await api.getProfiles();
       setProfiles(data as Profile[]);
+      loadedOnce.current = true;
     } catch (err) {
       console.error(err);
       toast.error('Failed to load profiles');
@@ -411,14 +413,13 @@ export default function ProfilesPage() {
                               <Star className={cn('w-4 h-4', p.isDefault && 'fill-current')} />
                             </button>
                           )}
-                          <button
-                            type="button"
-                            title="Assign prompt"
-                            onClick={() => setAssignProfile(p)}
+                          <Link
+                            title="My generation setup"
+                            href={`/settings?way=profile&profile=${p.id}`}
                             className="p-2 rounded-lg text-slate-500 hover:text-[var(--primary)] hover:bg-slate-100"
                           >
                             <FileText className="w-4 h-4" />
-                          </button>
+                          </Link>
                           <button
                             type="button"
                             title="Edit"

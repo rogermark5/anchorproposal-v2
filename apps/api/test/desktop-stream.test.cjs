@@ -23,7 +23,7 @@ function fixture() {
   };
   const deepseek = new DeepseekService(settings);
   deepseek.generate = async (_, __, options) => { state.calls++; options.signal.throwIfAborted(); options.onProgress(1234); if (state.error) throw state.error; return { content: output, tokenUsage: 42, transcript: [{ role: 'system', content: 'System' }, { role: 'user', content: 'User' }, { role: 'assistant', content: JSON.stringify(output) }] }; };
-  const service = new GenerationsService(prisma, { checkAccess: async () => {}, findOne: async () => ({ firstName: 'QA', experiences: [] }), buildProfileSnapshot: p => p }, { canGenerate: () => ({ allowed: state.allowed }) }, settings, { resolveDefaultTemplateId: async () => 'template-1' }, {}, { add: () => { throw new Error('Desktop should not wait on the queue'); } }, deepseek);
+  const service = new GenerationsService(prisma, { checkAccess: async () => {}, findOne: async () => ({ firstName: 'QA', experiences: [] }), buildProfileSnapshot: p => p }, { canGenerate: () => ({ allowed: state.allowed }) }, settings, { resolveDefaultTemplateId: async () => 'template-1', checkAccess: async () => ({ configJson: {} }) }, {}, { add: () => { throw new Error('Desktop should not wait on the queue'); } }, deepseek);
   const run = (key = 'request-key-00000001', signal = new AbortController().signal, emit = event => state.events.push(event), experienceTitleMode) => service.streamDesktopGeneration(application.id, state.user, { idempotencyKey: key, experienceTitleMode }, signal, emit);
   return { state, application, run, deepseek };
 }

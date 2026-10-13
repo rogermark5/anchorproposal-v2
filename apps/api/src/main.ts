@@ -8,7 +8,12 @@ function resolveCorsOrigins(): string[] | boolean {
     .map((o) => o.trim())
     .filter(Boolean);
 
-  const defaults = ['http://localhost:3000', 'http://127.0.0.1:3000'];
+  const defaults = [
+    'http://localhost:3000',
+    'http://127.0.0.1:3000',
+    'http://localhost:3100',
+    'http://127.0.0.1:3100',
+  ];
   const origins = [...new Set([...defaults, ...configured])];
   return origins.length > 0 ? origins : true;
 }

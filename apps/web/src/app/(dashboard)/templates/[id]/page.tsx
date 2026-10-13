@@ -19,8 +19,8 @@ function asObj(value: unknown): Nested {
 
 export default function TemplateDetailPage() {
   const { id } = useParams<{ id: string }>();
-  const { isAdmin, loading: authLoading } = useAuth();
-  const canManageTemplates = isAdmin;
+  const { isAdmin, canBid, loading: authLoading } = useAuth();
+  const canManageTemplates = isAdmin || canBid;
   const router = useRouter();
 
   const [name, setName] = useState('');
@@ -125,7 +125,7 @@ export default function TemplateDetailPage() {
       userEdited.current = false;
       const preview = await api.getTemplatePreview(id);
       setPreviewHtml(preview.html);
-      toast.success('Template saved');
+      toast.success('Your template customization was saved');
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to save');
     } finally {
@@ -179,10 +179,10 @@ export default function TemplateDetailPage() {
 
   return (
     <TemplateEditor
-      title="Edit Template"
+      title="Customize my template"
       subtitle={
         isPublished
-          ? 'Published · Changes apply after Save.'
+          ? 'Your private customization. The shared template stays unchanged.'
           : 'Draft · Publish when ready for bidders.'
       }
       name={name}
@@ -197,24 +197,6 @@ export default function TemplateDetailPage() {
         <>
           <button type="button" className={styles.btnSecondary} onClick={handleBack}>
             <ArrowLeft className="w-4 h-4" /> Back
-          </button>
-          <button
-            type="button"
-            className={styles.btnDanger}
-            disabled={deleting || saving || publishing}
-            onClick={handleDelete}
-          >
-            <Trash2 className="w-4 h-4" />
-            {deleting ? 'Deleting…' : 'Delete'}
-          </button>
-          <button
-            type="button"
-            className={styles.btnSecondary}
-            disabled={publishing || saving || deleting || isPublished || dirty}
-            onClick={handlePublish}
-          >
-            <Upload className="w-4 h-4" />
-            {publishing ? 'Publishing…' : isPublished ? 'Published' : 'Publish'}
           </button>
           <button
             type="button"

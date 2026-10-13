@@ -2,6 +2,7 @@
 
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 import { api, User } from '@/lib/api';
+import { usePathname } from 'next/navigation';
 
 interface AuthContextType {
   user: User | null;
@@ -18,10 +19,13 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
+  const isPublicResume = usePathname()?.startsWith('/resume/') ?? false;
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    // Viewing a shared resume must not refresh a stale login or redirect to sign-in.
+    if (isPublicResume) return;
     let cancelled = false;
     const finish = () => {
       if (!cancelled) setLoading(false);
@@ -55,7 +59,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       cancelled = true;
       window.clearTimeout(timeout);
     };
-  }, []);
+  }, [isPublicResume]);
 
   const login = async (email: string, password: string) => {
     const res = await api.login(email, password);

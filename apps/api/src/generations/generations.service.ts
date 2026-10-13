@@ -5,7 +5,9 @@ import {
   ForbiddenException,
   ConflictException,
 } from '@nestjs/common';
-import { createHash } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
+import { encryptResumeLink, decryptResumeLink } from './public-resume';
+import { renderCoverLetterHtml } from '../documents/cover-letter-layout';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import { PrismaService } from '../prisma/prisma.service';
@@ -15,16 +17,18 @@ import { SettingsService } from '../settings/settings.service';
 import { TemplatesService } from '../templates/templates.service';
 import { DocumentRendererService } from '../documents/document-renderer.service';
 import { DeepseekService } from '../deepseek/deepseek.service';
-import { FileType, GenerationFileKind, GenerationStatus, UserRole } from '@prisma/client';
+import { FileType, GenerationFileKind, GenerationStatus, UserRole, Prisma } from '@prisma/client';
 import type { GenerationOutput } from '@anchorproposal/shared';
 import { AuthUser } from '../common/types/auth.types';
 import { canBid, isAdmin, isMaster } from '../common/utils/roles.util';
 import { parseExperienceTitleMode, type ExperienceTitleMode } from './experience-title-mode';
 import { COVER_LETTER_UNAVAILABLE, usableCoverLetter } from '../deepseek/cover-letter';
 import { documentDownloadFilename } from '../documents/download-filename';
+import { bindProfileOutput, hasProfileIdentityConflict, redactPromptMetadata } from './profile-output';
 
 export type ManualGenerationInput = {
   responseJson: string;
+  coverLetterResponseJson?: string;
   contextHash: string;
   idempotencyKey: string;
   templateId?: string;
@@ -122,7 +126,10 @@ export class GenerationsService {
     const profile = await this.profilesService.findOne(profileId, user);
     const profileSnapshot = this.profilesService.buildProfileSnapshot(profile!);
 
-    return { resolved, prompt, templateVersionId, profileSnapshot, experienceTitleMode: parseExperienceTitleMode(resolved.experienceTitleMode) };
+    const template = await this.templatesService.checkAccess(templateVersionId!, user);
+    return { resolved, prompt, templateVersionId, profileSnapshot, templateConfigSnapshotJson: (template.configJson || {}) as Prisma.InputJsonObject,
+      promptSnapshot: prompt.content, coverLetterPromptSnapshot: ('coverLetterPrompt' in resolved ? resolved.coverLetterPrompt?.content : null) || null,
+      experienceTitleMode: parseExperienceTitleMode(resolved.experienceTitleMode) };
   }
 
   async startGeneration(
@@ -147,7 +154,7 @@ export class GenerationsService {
     // Reject before creating a generation or adding a job. The worker checks again
     // when it calls the provider, in case configuration changes while queued.
     await this.settingsService.requireApiKey();
-    const { prompt, templateVersionId, profileSnapshot, experienceTitleMode } =
+    const { prompt, templateVersionId, profileSnapshot, experienceTitleMode, promptSnapshot, coverLetterPromptSnapshot, templateConfigSnapshotJson } =
       await this.prepareGeneration(application.profileId, user, templateId);
     const generation = await this.prisma.$transaction(async tx => {
       // Web, manual imports, and desktop streams share the same version allocation lock.
@@ -164,6 +171,7 @@ export class GenerationsService {
         applicationId, creatorId: user.id, status: GenerationStatus.QUEUED,
         version: (latestGen?.version || 0) + 1, promptVersionId: prompt.id, templateVersionId,
         profileSnapshotJson: profileSnapshot, idempotencyKey, experienceTitleMode,
+        promptSnapshot, coverLetterPromptSnapshot, templateConfigSnapshotJson,
       } });
     });
 
@@ -182,18 +190,19 @@ export class GenerationsService {
     const application = await this.authorizeGeneration(applicationId, user);
     const context = await this.prepareGeneration(application.profileId, user, templateId);
     const { experienceTitleMode } = context;
-    const systemPrompt = this.deepseek.resumeSystemContent(experienceTitleMode);
+    const systemPrompt = this.deepseek.resumeSystemContent(experienceTitleMode, context.coverLetterPromptSnapshot ? 'resume' : 'combined');
     const userPrompt = this.deepseek.buildPrompt(context.prompt.content, {
       profileJson: JSON.stringify(context.profileSnapshot),
       jobTitle: application.jobTitle,
       company: application.company,
       jobDescription: application.jobDescription,
       experienceTitleMode,
+      documentKind: context.coverLetterPromptSnapshot ? 'resume' : 'combined',
     });
     // Detect edits while the user works in another model; never silently save against a different prompt.
     const contextHash = createHash('sha256').update(JSON.stringify({
       applicationId, profileId: application.profileId,
-      promptId: context.prompt.id, templateId: context.templateVersionId,
+      promptId: context.prompt.id, coverLetterPrompt: context.coverLetterPromptSnapshot, templateId: context.templateVersionId, templateConfig: context.templateConfigSnapshotJson,
       profile: context.profileSnapshot, systemPrompt, userPrompt, experienceTitleMode,
     })).digest('hex');
     return { ...context, application, systemPrompt, userPrompt, contextHash, experienceTitleMode };
@@ -203,6 +212,11 @@ export class GenerationsService {
     const context = await this.manualGenerationContext(applicationId, user, templateId, experienceTitleMode);
     return {
       prompt: `SYSTEM INSTRUCTIONS\n${context.systemPrompt}\n\nRESUME REQUEST\n${context.userPrompt}`,
+      coverLetterPrompt: context.coverLetterPromptSnapshot ? this.deepseek.buildPrompt(context.coverLetterPromptSnapshot, {
+        profileJson: JSON.stringify(context.profileSnapshot), jobTitle: context.application.jobTitle,
+        company: context.application.company, jobDescription: context.application.jobDescription,
+        documentKind: 'cover-letter',
+      }) : null,
       contextHash: context.contextHash,
       experienceTitleMode: context.experienceTitleMode,
       templateId: context.templateVersionId,
@@ -253,6 +267,8 @@ export class GenerationsService {
         version: (latest?.version || 0) + 1, promptVersionId: context.prompt.id,
         templateVersionId: context.templateVersionId, profileSnapshotJson: context.profileSnapshot, idempotencyKey,
         experienceTitleMode: context.experienceTitleMode,
+        promptSnapshot: context.promptSnapshot, coverLetterPromptSnapshot: context.coverLetterPromptSnapshot,
+        templateConfigSnapshotJson: context.templateConfigSnapshotJson,
       } });
     });
     try {
@@ -264,6 +280,11 @@ export class GenerationsService {
         candidateName: `${snapshot.firstName || ''} ${snapshot.lastName || ''}`.trim(),
         profileTitle: snapshot.profileTitle || undefined,
         profileExperiences: snapshot.experiences as unknown as Record<string, unknown>[],
+        coverLetterPrompt: context.coverLetterPromptSnapshot ? this.deepseek.buildPrompt(context.coverLetterPromptSnapshot, {
+          profileJson: JSON.stringify(snapshot), jobTitle: context.application.jobTitle,
+          company: context.application.company, jobDescription: context.application.jobDescription,
+          documentKind: 'cover-letter',
+        }) : undefined,
       }, { signal, onProgress: (characters) => emit({ stage: 'generating', characters }) });
       signal.throwIfAborted();
       emit({ stage: 'saving' });
@@ -314,7 +335,17 @@ export class GenerationsService {
     const snapshot = context.profileSnapshot;
     let output: GenerationOutput;
     try {
-      output = this.deepseek.parseManualResponse(input.responseJson, {
+      let responseJson = input.responseJson;
+      if (context.coverLetterPromptSnapshot) {
+        if (typeof input.coverLetterResponseJson !== 'string' || input.coverLetterResponseJson.length > 80_000) throw new Error('Paste the separate cover-letter JSON response.');
+        const parse = (value: string) => JSON.parse(value.trim().replace(/^```(?:json)?\s*\n?([\s\S]*?)\n?```$/i, '$1'));
+        const resume = parse(responseJson);
+        const letter = parse(input.coverLetterResponseJson);
+        const root = resume.data || resume.result || resume;
+        root.coverLetter = letter.coverLetter || letter;
+        responseJson = JSON.stringify(resume);
+      }
+      output = this.deepseek.parseManualResponse(responseJson, {
         experienceTitleMode, profileSnapshot: snapshot,
         jobTitle: context.application.jobTitle,
         company: context.application.company,
@@ -325,6 +356,7 @@ export class GenerationsService {
     } catch (error) {
       throw new BadRequestException(error instanceof Error ? error.message : 'Invalid resume JSON');
     }
+    if (context.coverLetterPromptSnapshot && !output.coverLetter) throw new BadRequestException('Separate mode requires the second cover-letter response before saving.');
 
     return this.prisma.$transaction(async (tx) => {
       // Serialize version allocation and retried imports for this application.
@@ -343,6 +375,8 @@ export class GenerationsService {
           version: (latest?.version || 0) + 1,
           promptVersionId: context.prompt.id, templateVersionId: context.templateVersionId,
           profileSnapshotJson: snapshot, structuredOutputJson: JSON.parse(JSON.stringify(output)),
+          promptSnapshot: context.promptSnapshot, coverLetterPromptSnapshot: context.coverLetterPromptSnapshot,
+          templateConfigSnapshotJson: context.templateConfigSnapshotJson,
           idempotencyKey, experienceTitleMode,
           turns: { create: [
             { sequence: 1, role: 'system', purpose: 'resume_system', content: context.systemPrompt },
@@ -385,11 +419,12 @@ export class GenerationsService {
     if (!application) throw new NotFoundException('Application not found');
     await this.assertAppAccess(application, user);
 
-    return this.prisma.resumeGeneration.findMany({
+    const generations = await this.prisma.resumeGeneration.findMany({
       where: { applicationId },
       include: { files: true, promptVersion: true, templateVersion: true },
       orderBy: { version: 'desc' },
     });
+    return generations.map(gen => this.safeGeneration(gen));
   }
 
   async previewHtml(id: string, user: AuthUser) {
@@ -397,6 +432,7 @@ export class GenerationsService {
     if (generation.status !== GenerationStatus.COMPLETED || !generation.structuredOutputJson) {
       throw new BadRequestException('The resume is not ready yet');
     }
+    if (generation.requiresRegeneration) throw new BadRequestException('This old resume contains conflicting profile information. Generate a new version before previewing, downloading or sharing it.');
     const output = generation.structuredOutputJson as GenerationOutput;
     const html = this.templatesService.renderPreviewHtml(
       {
@@ -407,12 +443,16 @@ export class GenerationsService {
         educations: output.educations,
         certificates: output.certificates,
       },
-      (generation.templateVersion?.configJson || {}) as object,
+      (generation.templateConfigSnapshotJson || generation.templateVersion?.configJson || {}) as object,
     );
     const box = this.templatesService.pdfLayout(
-      (generation.templateVersion?.configJson || {}) as object,
+      (generation.templateConfigSnapshotJson || generation.templateVersion?.configJson || {}) as object,
     );
-    return { html, pageSize: box.pageSize };
+    const coverLetter = usableCoverLetter(output.coverLetter, output.contact.name);
+    return { html, pageSize: box.pageSize, coverLetterHtml: coverLetter ? renderCoverLetterHtml({ ...coverLetter,
+      contact: output.contact, company: generation.application.company, jobTitle: generation.application.jobTitle,
+      date: (generation.completedAt || generation.createdAt)?.toISOString(),
+    }, (generation.templateConfigSnapshotJson || generation.templateVersion?.configJson || {}) as object) : null };
   }
 
   async findOne(id: string, user: AuthUser) {
@@ -422,7 +462,15 @@ export class GenerationsService {
     });
     if (!gen) throw new NotFoundException('Generation not found');
     await this.assertAppAccess(gen.application, user);
-    return gen;
+    return this.safeGeneration(gen);
+  }
+
+  private safeGeneration<T extends { structuredOutputJson: unknown; profileSnapshotJson: unknown }>(generation: T) {
+    if (!generation.structuredOutputJson) return { ...redactPromptMetadata(generation), requiresRegeneration: false };
+    const output = generation.structuredOutputJson as GenerationOutput;
+    const safe = bindProfileOutput(output, generation.profileSnapshotJson);
+    const requiresRegeneration = hasProfileIdentityConflict(output, generation.profileSnapshotJson);
+    return { ...redactPromptMetadata(generation), structuredOutputJson: safe, requiresRegeneration };
   }
 
   async exportFile(
@@ -458,13 +506,14 @@ export class GenerationsService {
     }
 
     const existing = generation.files.find((file) => file.kind === kind && file.type === type);
-    const output = generation.structuredOutputJson as GenerationOutput;
+    const output = bindProfileOutput(generation.structuredOutputJson as GenerationOutput, generation.profileSnapshotJson);
+    if (this.safeGeneration(generation).requiresRegeneration) throw new BadRequestException('This old resume contains conflicting profile information. Generate a new version before downloading it.');
     const profile = generation.profileSnapshotJson as { firstName?: string; lastName?: string };
     const baseFilename =
       `${profile.firstName || ''}_${profile.lastName || ''}_${generation.application.company}_${generation.application.jobTitle}`
         .replace(/[^a-zA-Z0-9_-]/g, '_')
         .substring(0, 100) + `_v${generation.version}`;
-    const templateConfig = (generation.templateVersion?.configJson || {}) as object;
+    const templateConfig = (generation.templateConfigSnapshotJson || generation.templateVersion?.configJson || {}) as object;
     const candidateName =
       `${profile.firstName || ''} ${profile.lastName || ''}`.trim() || output.contact?.name || 'Applicant';
     const coverLetter = usableCoverLetter(output.coverLetter, candidateName);
@@ -496,6 +545,9 @@ export class GenerationsService {
               closing: coverLetter!.closing,
               signatureName: candidateName,
               company: generation.application.company,
+              contact: output.contact,
+              jobTitle: generation.application.jobTitle,
+              date: (generation.completedAt || generation.createdAt)?.toISOString(),
             },
             baseFilename,
             templateConfig,
@@ -526,7 +578,43 @@ export class GenerationsService {
     });
     if (!generation) throw new NotFoundException('Generation not found');
     await this.assertAppAccess(generation.application, user);
-    return generation;
+    return this.safeGeneration(generation);
+  }
+
+  private shareSecret() {
+    const secret = process.env.RESUME_SHARE_SECRET || process.env.JWT_SECRET;
+    if (!secret || secret.length < 24) throw new BadRequestException('Configure RESUME_SHARE_SECRET with at least 24 characters before creating public resume links.');
+    return secret;
+  }
+
+  async createPublicLink(id: string, user: AuthUser) {
+    const generation = await this.findOne(id, user);
+    if (generation.creatorId !== user.id) throw new ForbiddenException('Only the creator can share this resume.');
+    if (generation.requiresRegeneration) throw new BadRequestException('Generate a new resume version before sharing this old document.');
+    if (generation.status !== GenerationStatus.COMPLETED) throw new BadRequestException('The resume is not ready yet');
+    const nonce = randomBytes(24).toString('base64url');
+    const expires = Date.now() + 30 * 24 * 60 * 60_000;
+    const token = encryptResumeLink({ id, nonce, expires }, this.shareSecret());
+    await this.prisma.resumeGeneration.update({ where: { id }, data: { publicShareNonce: nonce } });
+    return { path: `/resume/${token}`, expiresAt: new Date(expires).toISOString() };
+  }
+
+  async revokePublicLink(id: string, user: AuthUser) {
+    const generation = await this.findOne(id, user);
+    if (generation.creatorId !== user.id) throw new ForbiddenException('Only the creator can revoke this link.');
+    await this.prisma.resumeGeneration.update({ where: { id }, data: { publicShareNonce: null } });
+    return { success: true };
+  }
+
+  async publicResume(token: string) {
+    let payload: ReturnType<typeof decryptResumeLink>;
+    try { payload = decryptResumeLink(token, this.shareSecret()); } catch { throw new NotFoundException('Resume link is invalid or expired'); }
+    const generation = await this.prisma.resumeGeneration.findUnique({ where: { id: payload.id }, include: { templateVersion: true } });
+    if (!generation || generation.publicShareNonce !== payload.nonce || generation.status !== GenerationStatus.COMPLETED || !generation.structuredOutputJson) throw new NotFoundException('Resume link is no longer available');
+    const output = bindProfileOutput(generation.structuredOutputJson as GenerationOutput, generation.profileSnapshotJson);
+    if (this.safeGeneration(generation).requiresRegeneration) throw new NotFoundException('Resume link is no longer available');
+    const config = (generation.templateConfigSnapshotJson || generation.templateVersion?.configJson || {}) as object;
+    return { html: this.templatesService.renderPreviewHtml(output, config), pageSize: this.templatesService.pdfLayout(config).pageSize };
   }
 
   async updateStatus(

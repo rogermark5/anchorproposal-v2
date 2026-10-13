@@ -103,7 +103,7 @@ test('education and certificate placeholders expand to flat arrays with or witho
     for (const wrap of [false, true]) {
       const placeholder = name => wrap ? `[\n{{${name}}}\n]` : `{{${name}}}`;
       const template = `{"educations":${placeholder('educationsJson')},"certificates":${placeholder('certificatesJson')}}`;
-      const result = JSON.parse(s.buildPrompt(template, vars).split('\n\nTARGET APPLICATION DATA')[0]);
+      const result = JSON.parse(s.buildPrompt(template, vars).split('\n\nAPPLICATION GENERATION CONTEXT')[0]);
       assert.deepEqual(result.educations, profile.education);
       assert.deepEqual(result.certificates, profile.certifications);
       assert.ok(result.educations.every(row => !Array.isArray(row)));

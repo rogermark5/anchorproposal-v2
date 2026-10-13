@@ -1,13 +1,13 @@
 'use client';
 
 export function ResumePromptSettings({ mode, content, custom, saving, loaded, dirty, onModeChange, onContentChange, onSave, onReset }: {
-  mode: 'user' | 'profile';
+  mode: 'user' | 'profile' | 'separate';
   content: string;
   custom: boolean;
   saving: boolean;
   loaded: boolean;
   dirty: boolean;
-  onModeChange: (mode: 'user' | 'profile') => void;
+  onModeChange: (mode: 'user' | 'profile' | 'separate') => void;
   onContentChange: (content: string) => void;
   onSave: () => void;
   onReset: () => void;
@@ -19,18 +19,23 @@ export function ResumePromptSettings({ mode, content, custom, saving, loaded, di
         <legend className="sr-only">Choose the prompt for your generations</legend>
         <label className="flex items-start gap-3 rounded-lg border border-[var(--border)] p-3 text-sm text-slate-700 has-[:checked]:border-primary has-[:checked]:bg-slate-50">
           <input className="mt-1" type="radio" name="generation-prompt-mode" checked={mode === 'user'} onChange={() => onModeChange('user')} />
-          <span>Use one prompt for all my resumes<span className="mt-1 block text-xs text-slate-500">Always use the default prompt below.</span></span>
+          <span>Use one prompt for all my profiles<span className="mt-1 block text-xs text-slate-500">Generate a resume and cover letter together using your prompt below.</span></span>
         </label>
         <label className="flex items-start gap-3 rounded-lg border border-[var(--border)] p-3 text-sm text-slate-700 has-[:checked]:border-primary has-[:checked]:bg-slate-50">
           <input className="mt-1" type="radio" name="generation-prompt-mode" checked={mode === 'profile'} onChange={() => onModeChange('profile')} />
-          <span>Use prompts assigned to profiles<span className="mt-1 block text-xs text-slate-500">If a profile has no assigned prompt, you’ll be warned before using your default.</span></span>
+          <span>Use one combined prompt per profile<span className="mt-1 block text-xs text-slate-500">If a profile has no assigned prompt, you’ll be warned before using your default.</span></span>
+        </label>
+        <label className="flex items-start gap-3 rounded-lg border border-[var(--border)] p-3 text-sm text-slate-700">
+          <input className="mt-1" type="radio" name="generation-prompt-mode" checked={mode === 'separate'} onChange={() => onModeChange('separate')} />
+          <span>Use separate resume and cover letter prompts per profile<span className="mt-1 block text-xs text-slate-500">Assign both prompts on each profile. The resume is generated first, then the cover letter in a second request.</span></span>
         </label>
       </fieldset>
       <div className="space-y-2">
         <label htmlFor="default-resume-prompt" className="block text-sm font-medium text-slate-700">
           {mode === 'profile' ? 'Default prompt (fallback)' : 'Default prompt'}
         </label>
-        <p className="text-xs text-slate-500">{custom ? 'Your custom default.' : 'Shared default.'} Edits are saved only for your account; other admins keep their own defaults.</p>
+        <p className="text-xs text-slate-500">{custom ? 'Your custom default.' : 'Shared default.'} Edits are saved only for your account.</p>
+        {mode === 'separate' && <p className="text-xs text-slate-500">Separate mode requires both prompts on each profile. The default below is used when you switch to one of the combined modes.</p>}
         <p className="text-xs text-slate-500">Default prompts always use fixed profile positions.</p>
         <textarea id="default-resume-prompt" value={content} onChange={(event) => onContentChange(event.target.value)}
           disabled={saving || !loaded} maxLength={80000} spellCheck={false}

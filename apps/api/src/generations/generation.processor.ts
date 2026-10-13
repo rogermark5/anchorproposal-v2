@@ -28,16 +28,17 @@ export class GenerationProcessor extends WorkerHost {
         include: { promptVersion: true, templateVersion: true, application: true },
       });
       if (!generation) throw new Error('Generation not found');
-      if (!generation.promptVersion?.content) {
+      if (!generation.promptSnapshot && !generation.promptVersion?.content) {
         throw new Error('No published prompt version available');
       }
 
-      const prompt = this.deepseek.buildPrompt(generation.promptVersion.content, {
+      const prompt = this.deepseek.buildPrompt(generation.promptSnapshot || generation.promptVersion!.content, {
         profileJson: JSON.stringify(generation.profileSnapshotJson),
         jobTitle: generation.application.jobTitle,
         company: generation.application.company,
         jobDescription: generation.application.jobDescription,
         experienceTitleMode: parseExperienceTitleMode(generation.experienceTitleMode),
+        documentKind: generation.coverLetterPromptSnapshot ? 'resume' : 'combined',
       });
 
       await this.generationsService.updateStatus(generationId, GenerationStatus.GENERATING);
@@ -59,6 +60,11 @@ export class GenerationProcessor extends WorkerHost {
         profileExperiences: Array.isArray(profileSnap.experiences)
           ? profileSnap.experiences
           : undefined,
+        coverLetterPrompt: generation.coverLetterPromptSnapshot ? this.deepseek.buildPrompt(generation.coverLetterPromptSnapshot, {
+          profileJson: JSON.stringify(generation.profileSnapshotJson), jobTitle: generation.application.jobTitle,
+          company: generation.application.company, jobDescription: generation.application.jobDescription,
+          documentKind: 'cover-letter',
+        }) : undefined,
       });
       const output = content as GenerationOutput;
 
