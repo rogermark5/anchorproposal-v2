@@ -98,6 +98,16 @@ export class GenerationsController {
     return this.generationsService.createPublicLink(id, req.user);
   }
 
+  @Post('generations/:id/draft-preview')
+  previewEdits(@Param('id') id: string, @Body() body: unknown, @Req() req: { user: AuthUser }) {
+    return this.generationsService.previewEdits(id, req.user, body);
+  }
+
+  @Post('generations/:id/edits')
+  saveEdits(@Param('id') id: string, @Body() body: unknown, @Req() req: { user: AuthUser }) {
+    return this.generationsService.saveEdits(id, req.user, body);
+  }
+
   @Delete('generations/:id/public-link')
   revoke(@Param('id') id: string, @Req() req: { user: AuthUser }) {
     return this.generationsService.revokePublicLink(id, req.user);

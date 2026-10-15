@@ -327,7 +327,7 @@ model Application {
   statusHistory  ApplicationStatusHistory[]
   generations    ResumeGeneration[]
 
-  @@unique([profileId, normalizedJobUrl])
+  @@index([profileId, normalizedJobUrl])
   @@index([normalizedCompany, profileId])
   @@index([status])
   @@index([bidderId])
@@ -479,6 +479,7 @@ model ResumeGeneration {
   profileSnapshotJson  Json?
   experienceTitleMode  String           @default("saved")
   structuredOutputJson Json?
+  isUserEdited         Boolean          @default(false)
   tokenUsage           Int?
   costEstimate         Float?
   errorMessage         String?

@@ -1,6 +1,7 @@
 require('reflect-metadata');const assert=require('node:assert/strict');const fs=require('node:fs');const path=require('node:path');const {createRequire}=require('node:module');
 const {DocumentRendererService}=require('../dist/documents/document-renderer.service');const {TemplatesService}=require('../dist/templates/templates.service');
 const load=createRequire(require.resolve('docx'));const JSZip=load('jszip');
+const {editedDocument}=require('../dist/generations/document-edits');
 (async()=>{
  const dir=path.resolve('../../tmp/generation-safety-ui');fs.mkdirSync(dir,{recursive:true});const files=new Map();
  const renderer=new DocumentRendererService(new TemplatesService({}),{saveFile:async(_a,_g,name,data)=>{files.set(name,data);const location=path.join(dir,name);fs.writeFileSync(location,data);return location;}});
@@ -12,4 +13,14 @@ const load=createRequire(require.resolve('docx'));const JSZip=load('jszip');
  assert.ok(xml.includes('October 12, 2026'));
  assert.equal(xml.split('Sincerely,').length,2);assert.ok(!xml.includes('Wrong name'));assert.ok(!xml.includes('<w:pgBorders'));
  console.log('PASS professional PDF and DOCX exports include the saved contact header and exactly one signoff.');
+ const profile={firstName:'Jason',lastName:'Glenn',email:'jason@example.com',experiences:[{title:'Engineer',company:'Saved Employer'}],education:[],certifications:[]};
+ const original={contact:{name:'Jason Glenn'},summary:'Original summary.',skills:[{Backend:'JSON response skills'}],experiences:[{title:'Engineer',company:'Saved Employer',dates:'2021 – 2025',bullets:['Built supported APIs.']}],educations:[],certificates:[],coverLetter:cover};
+ const edited=editedDocument(original,profile,{summary:'Edited resume summary for reliable API development.',skills:[{Backend:'Fastify, PostgreSQL, TypeScript'}],experiences:[{title:'Senior Backend Engineer',bullets:['Edited supported API achievement.','Documented service integrations and maintained automated tests.']}],educations:[{degree:'BSc Computer Science',institution:'User correction',dates:'2016 – 2020'}],certificates:[{name:'User correction certificate',issuer:'Issuer',date:'2025'}],coverLetter:{greeting:'Dear Engineering Team,',paragraphs:['Edited cover letter opening for your API services.','My supported API development and automated testing experience aligns with your engineering requirements.','I welcome a discussion about the opportunity.\nSincerely,\nWrong person'],closing:'Sincerely,\nSincerely,'}});
+ const config={contact:{showJobTitle:false}};
+ await renderer.renderAll('qa','qa',edited,config,'edited-resume',['PDF','DOCX']);
+ await renderer.renderCoverLetter('qa','qa',{...edited.coverLetter,signatureName:edited.contact.name,contact:edited.contact,company:'Hiring Co',jobTitle:'Target Engineer',date:'2026-10-15'},'edited-cover-letter',config,['PDF','DOCX']);
+ for(const name of ['edited-resume','edited-cover-letter_CoverLetter']){assert.equal(files.get(name+'.pdf').subarray(0,4).toString(),'%PDF');assert.ok(files.get(name+'.pdf').length>5000);const document=await JSZip.loadAsync(files.get(name+'.docx'));const xml=await document.file('word/document.xml').async('string');assert.ok(xml.includes('Jason Glenn'));assert.ok(!xml.includes('Wrong person'));if(name==='edited-resume'){for(const value of ['Edited resume summary','Fastify, PostgreSQL, TypeScript','Edited supported API achievement','User correction certificate','BSc Computer Science'])assert.ok(xml.includes(value));assert.equal(xml.split('Senior Backend Engineer').length-1,1);}else{assert.ok(xml.includes('Edited cover letter opening'));assert.equal(xml.split('Sincerely,').length-1,1);assert.ok(!xml.includes('Senior Backend Engineer'));}}
+ const html=new TemplatesService({}).renderPreviewHtml(edited,config);fs.writeFileSync(path.join(dir,'edited-resume.html'),html);
+ const puppeteer=require('puppeteer');const browser=await puppeteer.launch({headless:true,pipe:true,args:['--no-sandbox','--disable-dev-shm-usage']});try{const page=await browser.newPage();await page.setViewport({width:816,height:1056});await page.setContent(html);await page.screenshot({path:path.join(dir,'edited-resume.png'),fullPage:true});}finally{await browser.close();}
+ console.log('PASS edited resume and cover letter PDF/Word builds preserve edits and hide only the header title.');
 })().catch(e=>{console.error(e.message);process.exitCode=1;});

@@ -8,6 +8,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { AuthUser } from '../common/types/auth.types';
 import { appendJsonRules, jsonOutputRules, promptInstructions, parseDocumentKind, type DocumentKind } from '../deepseek/json-rules';
 import { DEFAULT_PROMPT } from '@anchorproposal/shared';
+import { defaultDocumentDisplay, type DocumentDisplay } from '../generations/document-display';
 import { parseExperienceTitleMode, type ExperienceTitleMode } from '../generations/experience-title-mode';
 
 @Injectable()
@@ -189,7 +190,22 @@ export class SettingsService {
     });
     return { mode: settings.assignmentMode, defaultPrompt: settings.effectivePrompt, prompts: settings.myPrompts,
       profiles: profiles.map(profile => ({ id: profile.id, name: [profile.firstName, profile.lastName].join(' '), title: profile.profileTitle, ...(profile.generationPreferences[0] || { resumePromptId: null, coverLetterPromptId: null }) })),
-      jsonRules: { combined: jsonOutputRules('combined'), resume: jsonOutputRules('resume'), 'cover-letter': jsonOutputRules('cover-letter') } };
+      jsonRules: { combined: jsonOutputRules('combined'), resume: jsonOutputRules('resume'), 'cover-letter': jsonOutputRules('cover-letter') },
+      documentDisplay: await this.getDocumentDisplay(user.id) };
+  }
+
+  async getDocumentDisplay(userId?: string): Promise<DocumentDisplay> {
+    if (!userId) return { ...defaultDocumentDisplay };
+    const saved = await this.prisma.systemSetting.findUnique({ where: { key: `document_display:${userId}` } });
+    try { const value = JSON.parse(saved?.value || '{}'); return { showJobTitle: typeof value.showJobTitle === 'boolean' ? value.showJobTitle : true }; }
+    catch { return { ...defaultDocumentDisplay }; }
+  }
+
+  async updateDocumentDisplay(user: AuthUser, data: DocumentDisplay) {
+    if (!data || typeof data.showJobTitle !== 'boolean') throw new BadRequestException('Choose whether the header job title is visible or hidden.');
+    const display = { showJobTitle: data.showJobTitle };
+    await this.prisma.systemSetting.upsert({ where: { key: `document_display:${user.id}` }, create: { key: `document_display:${user.id}`, value: JSON.stringify(display) }, update: { value: JSON.stringify(display) } });
+    return display;
   }
 
   async getAiSettings() {

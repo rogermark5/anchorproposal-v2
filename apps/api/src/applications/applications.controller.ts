@@ -69,7 +69,7 @@ export class ApplicationsController {
       location?: string;
       workArrangement?: WorkArrangement;
       source?: string;
-      jobUrl?: string;
+      jobUrl?: string | null;
       jobDescription?: string;
     },
     @Req() req: { user: AuthUser },

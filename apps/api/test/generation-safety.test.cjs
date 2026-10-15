@@ -16,12 +16,12 @@ const letter = { greeting: 'Dear Hiring Manager,', paragraphs: ['My Java service
 const response = () => ({ contact: { name: 'Basil Bruce Crow', email: 'basil@example.com', phone: '999', linkedin: 'https://linkedin.com/other', title: 'CEO' }, summary: 'Java engineer.', skills: [{ Fake: 'Unrelated skills' }], experiences: [{ title: 'Wrong title', company: 'Jason Co', dates: '1900 – Present', location: 'Wrong city', bullets: ['Built Java services.'] }], educations: [], certificates: [], coverLetter: letter });
 const meta = mode => ({ profileSnapshot: profile, profileExperiences: profile.experiences, candidateName: 'Jason Glenn', experienceTitleMode: mode });
 
-test('saved/manual generation cannot substitute prompt or JSON identity, contact, skills or employer facts', () => {
+test('saved/manual generation protects identity and employers while using response JSON skills', () => {
   const service = new DeepseekService({});
   const result = service.parseManualResponse(JSON.stringify(response()), meta('saved'));
   assert.equal(result.contact.name, 'Jason Glenn'); assert.equal(result.contact.email, profile.email); assert.equal(result.contact.phone, profile.phone);
   assert.equal(result.contact.title, result.experiences[0].title); assert.equal(result.contact.linkedin, undefined);
-  assert.deepEqual(result.skills, [{ Languages: 'Java' }]); assert.deepEqual(result.contact.links, [{ type: 'GitHub', url: 'https://github.com/jason' }]);
+  assert.deepEqual(result.skills, response().skills); assert.deepEqual(result.contact.links, [{ type: 'GitHub', url: 'https://github.com/jason' }]);
   assert.equal(result.experiences[0].title, 'Engineer'); assert.equal(result.experiences[0].dates, '2021 – 2025');
   assert.equal(result.coverLetter.signatureName, 'Jason Glenn');
   const html = new TemplatesService({}).renderPreviewHtml(result, {});
@@ -116,7 +116,7 @@ test('public resume links require creator access, return only rendered resume, a
     generation.structuredOutputJson.experiences[0].title = profile.experiences[0].title;
     const prisma = { resumeGeneration: { findUnique: async () => generation, update: async ({ data }) => Object.assign(generation, data) } };
     const templates = { renderPreviewHtml: output => `<p>${output.contact.name}</p>`, pdfLayout: () => ({ pageSize: 'LETTER' }) };
-    const service = new GenerationsService(prisma, { checkAccess: async () => {} }, {}, {}, templates, {}, {}, {});
+    const service = new GenerationsService(prisma, { checkAccess: async () => {} }, {}, { getDocumentDisplay: async () => ({ showJobTitle: true }) }, templates, {}, {}, {});
     service.assertAppAccess = async () => {};
     await assert.rejects(service.createPublicLink('g', { id: 'other', role: 'ADMIN' }), /creator/);
     const share = await service.createPublicLink('g', { id: 'owner', role: 'ADMIN' });

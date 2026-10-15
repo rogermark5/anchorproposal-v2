@@ -32,7 +32,7 @@ test('public links work through the real HTTP authentication guard, while manage
     resumeGeneration: { findUnique: async ({ where }) => where.id === generation.id ? generation : null, update: async ({ data }) => Object.assign(generation, data) },
     user: { findUnique: async ({ where }) => ['owner', 'other'].includes(where.id) ? { id: where.id, status: 'ACTIVE', role: 'BIDDER', email: `${where.id}@qa.invalid`, firstName: 'QA', lastName: where.id } : null },
   };
-  const service = new GenerationsService(prisma, { checkAccess: async () => {} }, {}, {}, new TemplatesService({}), {}, {}, {});
+  const service = new GenerationsService(prisma, { checkAccess: async () => {} }, {}, { getDocumentDisplay: async () => ({ showJobTitle: true }) }, new TemplatesService({}), {}, {}, {});
   class HttpTestModule {}
   Module({
     imports: [PassportModule.register({ defaultStrategy: 'jwt' })],

@@ -23,19 +23,13 @@ export function hasProfileIdentityConflict(output: GenerationOutput, snapshot: u
   });
 }
 
-/** Profile identity and skills are never supplied by a prompt or model response. */
-export function bindProfileOutput(output: GenerationOutput, snapshot: unknown): GenerationOutput {
+/** Identity stays bound to the saved profile; generated skills come from the response. */
+export function bindProfileOutput(output: GenerationOutput, snapshot: unknown, userEdited = false): GenerationOutput {
   if (!snapshot || typeof snapshot !== 'object') throw new Error('The saved profile snapshot is missing. Regenerate using a saved profile.');
   const profile = snapshot as Record<string, any>;
   const name = [profile.firstName, profile.lastName].map(plainText).filter(Boolean).join(' ');
   if (!name) throw new Error('The saved profile name is missing. Regenerate using a saved profile.');
   const links = Array.isArray(profile.links) ? profile.links : [];
-  const skills: Record<string, string[]> = {};
-  for (const skill of Array.isArray(profile.skills) ? profile.skills : []) {
-    const category = plainText(skill.category) || 'Skills';
-    const value = plainText(skill.name);
-    if (value) (skills[category] ||= []).push(value);
-  }
   return {
     ...output,
     contact: {
@@ -47,14 +41,14 @@ export function bindProfileOutput(output: GenerationOutput, snapshot: unknown): 
       linkedin: plainText(profile.linkedin) || plainText(links.find((link: any) => /linkedin/i.test(`${link.type || link.label || ''} ${link.url || ''}`))?.url) || undefined,
       links: links.map((link: any) => ({ type: plainText(link.type || link.label), url: plainText(link.url) })).filter((link: any) => /^https?:\/\//i.test(link.url)),
     },
-    skills: Object.entries(skills).map(([category, names]) => ({ [category]: [...new Set(names)].join(', ') })),
+    skills: output.skills || [],
     // A model may improve section wording, but cannot add another person's qualifications.
-    educations: Array.isArray(profile.education || profile.educations) ? (profile.education || profile.educations).map((row: any, index: number) => ({
+    educations: userEdited ? output.educations : Array.isArray(profile.education || profile.educations) ? (profile.education || profile.educations).map((row: any, index: number) => ({
       ...(output.educations?.[index] || {}), ...row,
       institution: plainText(row.institution || row.school || row.university), degree: plainText(row.degree || row.major),
       dates: plainText(row.dates) || [row.startDate, row.endDate].map(plainText).filter(Boolean).join(' – '),
     })) : [],
-    certificates: Array.isArray(profile.certifications || profile.certificates) ? (profile.certifications || profile.certificates).map((row: any, index: number) => ({
+    certificates: userEdited ? output.certificates : Array.isArray(profile.certifications || profile.certificates) ? (profile.certifications || profile.certificates).map((row: any, index: number) => ({
       ...(output.certificates?.[index] || {}), ...row,
       name: plainText(row.name || row.title), issuer: plainText(row.issuer || row.organization), date: plainText(row.issueDate || row.date),
     })) : [],

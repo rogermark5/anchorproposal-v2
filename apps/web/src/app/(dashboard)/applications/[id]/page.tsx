@@ -189,7 +189,7 @@ export default function ApplicationDetailPage() {
 
   return (
     <div className="p-4 sm:p-6 lg:p-8">
-      {previewId && <GenerationPreviewDialog applicationId={id} initialGenerationId={previewId} onClose={() => setPreviewId(null)} />}
+      {previewId && <GenerationPreviewDialog applicationId={id} initialGenerationId={previewId} onClose={() => setPreviewId(null)} onSaved={() => void load()} />}
       <Link href="/applications" className="flex items-center gap-2 text-sm text-slate-500 hover:text-primary mb-6">
         <ArrowLeft className="w-4 h-4" /> Back to Applications
       </Link>

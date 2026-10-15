@@ -27,10 +27,10 @@ test('hybrid/onsite warnings prefer the job description over bare metadata', asy
 
 test('duplicate warning explains the existing application and excludes the edited application', async () => {
   let query;
-  const service = new RulesService({ warningRule: { findMany: async () => [] }, application: { findMany: async (args) => { query = args; return [{ jobTitle: 'Previous Role', status: 'APPLIED' }]; } } });
+  const service = new RulesService({ warningRule: { findMany: async () => [] }, application: { findMany: async (args) => { query = args; return [{ jobTitle: 'Previous Role', status: 'APPLIED', company: data.company }]; } } });
   const result = await service.validateApplication({ ...data, excludeApplicationId: 'app-being-edited' });
   assert.deepEqual(query.where.id, { not: 'app-being-edited' });
-  assert.equal(result.warnings[0].matchedText, 'Duplicate application: this profile already has an application to Example Co, including “Previous Role” (applied).');
+  assert.equal(result.warnings[0].matchedText, 'Duplicate application: this profile already has an application to Example Co, including “Previous Role” (applied). You can continue and generate a resume.');
 });
 
 test('old keyword-only warnings are contextualized for existing applications', () => {

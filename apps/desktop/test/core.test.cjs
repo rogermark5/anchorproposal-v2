@@ -138,3 +138,17 @@ test('generation runner leaves experience positions to the server prompt flag', 
   assert.equal(body.experienceTitleMode, undefined); assert.equal(runner.job.stage, 'completed');
   runner.start({ applicationId: 'app-1' }); await runner.promise; assert.equal(body.experienceTitleMode, undefined);
 });
+
+
+test('new sharing and private prompt routes allow only their intended methods', () => {
+  for (const [route, methods] of [
+    ['/settings/generation-workflow', ['GET']],
+    ['/profiles/profile-1/generation-preference', ['GET', 'PUT']],
+    ['/generations/gen-1/public-link', ['POST', 'DELETE']],
+  ]) {
+    for (const method of ['GET', 'POST', 'PUT', 'PATCH', 'DELETE']) {
+      if (methods.includes(method)) assert.doesNotThrow(() => apiRequest(route, method));
+      else assert.throws(() => apiRequest(route, method), /Unsupported/);
+    }
+  }
+});

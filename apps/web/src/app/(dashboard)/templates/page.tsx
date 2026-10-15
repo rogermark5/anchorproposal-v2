@@ -163,7 +163,7 @@ function TemplatesDashboardInner() {
         if (token !== previewToken.current) return;
         setPreviewHtml(preview.html);
         if (typeof window !== 'undefined') {
-          if (searchParams.get('id') !== selectedId) window.history.replaceState(null, '', `/templates?id=${encodeURIComponent(selectedId)}`);
+          if (searchParams.get('id') !== selectedId) router.replace(`/templates?id=${encodeURIComponent(selectedId)}`);
         }
       } catch (err) {
         if (token === previewToken.current) {

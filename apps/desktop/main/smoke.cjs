@@ -22,6 +22,13 @@ async function run({ window, auth, settings, safeStorage, globalShortcut, direct
     if (route === '/desktop/release') return json({ available: false, releases: [] });
     if (!req.headers.authorization) return json({ message: 'Unauthorized' }, 401);
     if (route === '/auth/me') return json(account());
+    if (route === '/settings/generation-workflow') {
+      const prompt = { id: 'prompt-1', name: 'My prompt', content: 'Use the saved profile positions.', documentKind: 'combined', experienceTitleMode: 'saved', version: 1, isPublished: true };
+      return json({ mode: 'profile', defaultPrompt: prompt, prompts: [prompt], profiles: profiles.map(p => ({ id: p.id, name: p.firstName + ' ' + p.lastName, title: p.profileTitle, resumePromptId: 'prompt-1', coverLetterPromptId: null })), jsonRules: { combined: 'Return valid JSON.', resume: 'Return resume JSON.', 'cover-letter': 'Return cover-letter JSON.' } });
+    }
+    if (route === '/profiles/profile-1/generation-preference') return json({ resumePromptId: 'prompt-1', coverLetterPromptId: null });
+    if (route === '/applications/app-1/generations') return json(complete ? [{ id: 'gen-1', version: 1, status: 'COMPLETED', structuredOutputJson: content, files: [] }] : []);
+    if (route === '/generations/gen-1/public-link') return json(req.method === 'DELETE' ? { success: true } : { path: '/resume/qa-public-token', expiresAt: '2026-11-12T00:00:00Z' });
     if (route === '/auth/logout') return json({ success: true });
     if (route === '/dashboard/metrics') return json({ kpis: { total: 24, applied: 18, readyToApply: 6, interviews: 4, offers: 1, warnings: 2 }, trend: [], recentGenerations: [], byAdmin: [], byBidder: [], filterOptions: { admins: [], bidders: [] } });
     if (route === '/profiles') { if (req.method === 'POST') { const created = { ...profile, ...data, id: 'profile-2', isDefault: false }; profiles.push(created); return json(created); } return json(profiles); }
@@ -129,6 +136,23 @@ async function run({ window, auth, settings, safeStorage, globalShortcut, direct
     await evaluate('window.dispatchEvent(new KeyboardEvent("keydown", {key:"Escape",bubbles:true}))'); assert.equal(target.isVisible(), true);
     await fill('#manual-json-response', JSON.stringify({ ...content, experiences: [{ role: 'Platform Engineer', bullets: ['Built dependable services.'] }] })); await click('Save resume'); await waitFor('document.body.innerText.includes("Your resume is ready")'); checks.push('Shared manual prompt and validated JSON import saved to server');
     target = window; await route('/applications/app-1'); await waitFor('document.body.innerText.includes("Northstar") || document.body.innerText.includes("Example Works")'); checks.push('Application detail and generation history');
+    await click('Files'); await waitFor('[...document.querySelectorAll("button")].some(el => el.textContent === "Preview and download both")');
+    await click('Preview and download both'); await waitFor('!!document.querySelector("dialog[open] iframe")');
+    await evaluate('navigator.clipboard.writeText = async value => { window.__qaCopiedLink = value; }; true');
+    await click('Create public resume link'); await waitFor('!!document.querySelector("dialog[open] footer input")');
+    assert.equal(await evaluate('document.querySelector("dialog[open] footer input").value'), 'https://anchorproposal.giize.com/resume/qa-public-token');
+    assert.equal(await evaluate('window.__qaCopiedLink'), 'https://anchorproposal.giize.com/resume/qa-public-token');
+    await capture('public-resume-link'); await click('Revoke public link'); await waitFor('!document.querySelector("dialog[open] footer input")');
+    await evaluate('document.querySelector("dialog[open] header button").click()');
+    checks.push('Native public sharing uses the hosted website URL and revocation clears the link');
+    assert.ok(requests.some(request => request.route === '/settings/generation-workflow'));
+    await evaluate('window.anchor.request("/profiles/profile-1/generation-preference", "PUT", {resumePromptId:"prompt-1",coverLetterPromptId:null})');
+    checks.push('Private generation settings and profile preferences use permitted native API routes');
+    await route('/settings?way=separate&profile=profile-2');
+    await waitFor('document.querySelector("#generation-way-panel select")?.value === "profile-2"');
+    assert.ok(await evaluate('document.querySelector("#generation-way-panel").innerText.includes("Generate the resume")'));
+    checks.push('Profile-specific prompt links select the requested profile and separate generation mode');
+    await route('/applications/app-1'); await waitFor('[...document.querySelectorAll("button")].some(el => el.textContent === "Answers")');
     await click('Answers'); await waitFor('!!document.querySelector(".desktop-page textarea")'); await fill('.desktop-page textarea', 'Why would I be a good fit?'); await evaluate('document.querySelector(".desktop-page textarea").form.requestSubmit()'); await waitFor('document.body.innerText.includes("I build reliable backend services")'); await capture('08-answer-chat'); checks.push('Answer chat continues the saved generation conversation');
     target = getQuickWindow(); await showQuick(); await waitFor('!!document.querySelector(".quick-form input") && document.querySelector(".quick-form input").value === ""');
     await fill('.quick-form input', 'Saved without generation'); await fill('.quick-form .space-y-4 > div:nth-child(2) input', 'Example Works'); await fill('.quick-form textarea', 'An application draft.'); await evaluate('window.anchor.window("hide")'); await showQuick(); assert.equal(await evaluate('document.querySelector(".quick-form input").value'), 'Saved without generation');

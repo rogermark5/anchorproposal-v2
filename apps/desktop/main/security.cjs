@@ -42,6 +42,9 @@ function apiRequest(route, method = 'GET') {
   apiPath(route);
   const pathname = route.split('?')[0];
   const rules = [
+    [/^\/settings\/generation-workflow$/, ['GET']],
+    [/^\/profiles\/[\w-]+\/generation-preference$/, ['GET', 'PUT']],
+    [/^\/generations\/[\w-]+\/public-link$/, ['POST', 'DELETE']],
     [/^\/auth\/me$/, ['GET']], [/^\/auth\/change-password$/, ['PATCH']],
     [/^\/dashboard\/metrics$/, ['GET']], [/^\/(audit|job-pool)$/, ['GET']],
     [/^\/applications(?:\/[\w-]+)?$/, ['GET', 'POST', 'PATCH', 'DELETE']],

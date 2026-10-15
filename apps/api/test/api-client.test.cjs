@@ -7,9 +7,9 @@ const ts = require('typescript');
 const source = fs.readFileSync(path.resolve(__dirname, '../../web/src/lib/api.ts'), 'utf8');
 const js = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS } }).outputText;
 const json = (body, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
-function client(fetch) {
+function client(fetch, anchor) {
   const storage = new Map([['accessToken', 'old-access'], ['refreshToken', 'old-refresh']]);
-  const context = { exports: {}, process: { env: {} }, fetch, structuredClone, URLSearchParams, window: { location: { href: '' } }, localStorage: {
+  const context = { exports: {}, process: { env: {} }, fetch, structuredClone, URL, URLSearchParams, FormData, window: { anchor, location: { href: '', origin: 'https://web.example.test' } }, localStorage: {
     getItem: (key) => storage.get(key) ?? null,
     setItem: (key, value) => storage.set(key, value),
     removeItem: (key) => storage.delete(key),
@@ -77,4 +77,21 @@ test('page requests share in-flight reads and cached results are invalidated aft
   await api.updateProfile('profile', { firstName: 'Changed' });
   await api.getProfiles(); assert.equal(reads, 2);
   api.clearTokens(); await api.getProfiles(); assert.equal(reads, 3);
+});
+
+
+test('public share URLs use the website origin in browsers and the hosted server in desktop', async () => {
+  const share = { path: '/resume/qa-token', expiresAt: '2026-11-12T00:00:00Z' };
+  const web = client(async () => json(share));
+  assert.equal((await web.api.createResumePublicLink('g')).url, 'https://web.example.test/resume/qa-token');
+  const calls = [];
+  const desktop = client(() => { throw new Error('Desktop must use its native API bridge'); }, {
+    request: async (...args) => { calls.push(args); return share; },
+    bootstrap: async () => ({ settings: { server: 'https://anchorproposal.giize.com/backend' } }),
+  });
+  const result = await desktop.api.createResumePublicLink('g');
+  assert.equal(result.url, 'https://anchorproposal.giize.com/resume/qa-token');
+  assert.equal(result.path, share.path);
+  assert.equal(calls[0][0], '/generations/g/public-link');
+  assert.equal(calls[0][1], 'POST');
 });

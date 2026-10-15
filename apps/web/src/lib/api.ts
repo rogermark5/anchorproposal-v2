@@ -9,7 +9,12 @@ export type GenerationWorkflow = {
   mode: 'user' | 'profile' | 'separate'; defaultPrompt: PrivatePrompt; prompts: PrivatePrompt[];
   profiles: { id: string; name: string; title: string | null; resumePromptId: string | null; coverLetterPromptId: string | null }[];
   jsonRules: Record<DocumentKind, string>;
+  documentDisplay?: { showJobTitle: boolean };
 };
+
+export type ResumeDocument = { contact: { name: string; title?: string; email?: string; phone?: string; address?: string }; summary: string; skills: Record<string, string>[]; experiences: Record<string, unknown>[]; educations: Record<string, unknown>[]; certificates: Record<string, unknown>[]; coverLetter?: { greeting: string; paragraphs: string[]; closing: string; signatureName?: string } };
+export type DocumentEdits = { summary: string; skills: Record<string, string>[]; experiences: { title: string; bullets: string[] }[]; educations: { degree: string; institution: string; dates: string; location?: string }[]; certificates: { name: string; issuer: string; date: string }[]; coverLetter?: { greeting: string; paragraphs: string[]; closing: string }; idempotencyKey?: string };
+export type GenerationDocumentPreview = { html: string; pageSize: string; coverLetterHtml?: string | null; content?: ResumeDocument; canEdit?: boolean; generationId?: string; version?: number };
 
 export type UserRole = 'MASTER' | 'ADMIN' | 'BIDDER';
 
@@ -334,7 +339,7 @@ class ApiClient {
       location?: string;
       workArrangement?: string;
       source?: string;
-      jobUrl?: string;
+      jobUrl?: string | null;
       jobDescription?: string;
     },
   ) {
@@ -579,11 +584,26 @@ class ApiClient {
   }
 
   getGenerationPreview(id: string) {
-    return this.request<{ html: string; pageSize: 'A4' | 'LETTER'; coverLetterHtml?: string | null }>(`/generations/${id}/preview`);
+    return this.request<GenerationDocumentPreview>(`/generations/${id}/preview`);
   }
 
-  createResumePublicLink(id: string) {
-    return this.request<{ path: string; expiresAt: string }>(`/generations/${id}/public-link`, { method: 'POST' });
+  previewDocumentEdits(id: string, data: DocumentEdits) {
+    return this.request<GenerationDocumentPreview>(`/generations/${id}/draft-preview`, { method: 'POST', body: JSON.stringify(data) });
+  }
+
+  saveDocumentEdits(id: string, data: DocumentEdits) {
+    return this.request<{ generation: { id: string; version: number; status: string; structuredOutputJson: ResumeDocument }; preview: GenerationDocumentPreview }>(`/generations/${id}/edits`, { method: 'POST', body: JSON.stringify(data) });
+  }
+
+  updateDocumentDisplay(data: { showJobTitle: boolean }) {
+    return this.request<{ showJobTitle: boolean }>('/settings/document-display', { method: 'PATCH', body: JSON.stringify(data) });
+  }
+
+  async createResumePublicLink(id: string) {
+    const link = await this.request<{ path: string; expiresAt: string }>(`/generations/${id}/public-link`, { method: 'POST' });
+    const desktop = desktopBridge();
+    const origin = desktop ? new URL((await desktop.bootstrap()).settings.server).origin : window.location.origin;
+    return { ...link, url: new URL(link.path, origin).href };
   }
 
   revokeResumePublicLink(id: string) {

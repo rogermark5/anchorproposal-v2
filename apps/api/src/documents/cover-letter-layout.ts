@@ -43,7 +43,7 @@ export function renderCoverLetterHtml(cover: CoverLetterDocument, config: object
     .greeting { margin: 0 0 14px; } .paragraph { margin: 0 0 13px; white-space: pre-line; orphans: 3; widows: 3; }
     .signature { margin-top: 20px; break-inside: avoid; } .signature p { margin: 0; } .name { padding-top: 6px; font-weight: 600; color: ${primary}; }
   </style></head><body><main class="page">
-    <header class="candidate"><h1>${esc(contact.name)}</h1>${contact.title ? `<p class="headline">${esc(contact.title)}</p>` : ''}<div class="contact">${contactLines}</div></header>
+    <header class="candidate"><h1>${esc(contact.name)}</h1>${contact.title && cfg.contact.showJobTitle !== false ? `<p class="headline">${esc(contact.title)}</p>` : ''}<div class="contact">${contactLines}</div></header>
     <p class="date">${esc(coverLetterDate(cover.date))}</p>
     <p class="recipient">Hiring Manager<br>${esc(cover.company)}</p>
     ${cover.jobTitle ? `<p class="subject">Application for ${esc(cover.jobTitle)}</p>` : ''}

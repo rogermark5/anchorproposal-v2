@@ -4,7 +4,6 @@ import { toast } from 'sonner';
 import { ApplicationFormFields } from '../../web/src/components/application-form-fields';
 import { ManualGenerationDialog } from '../../web/src/components/manual-generation-dialog';
 import { api, type ApplicationOption } from '../../web/src/lib/api';
-import { PLACEHOLDER_JOB_URL } from '../../web/src/lib/utils';
 import { useAuth } from './auth-context';
 import QuickResult from './quick-result';
 
@@ -31,6 +30,7 @@ export default function QuickApplication() {
     let request = 0;
     const refresh = async () => {
       const version = ++request;
+      api.invalidateCache();
       const profileRequest = isAdmin ? api.getProfiles() : api.getAssignedProfiles().then(rows => (rows as any[]).map(assignment => ({ ...assignment.profile, id: assignment.profileId, isDefault: assignment.isDefault })));
       const results = await Promise.allSettled([profileRequest, api.getTemplates(), api.getApplicationOptions()]);
       if (!mounted || version !== request) return;
@@ -66,7 +66,7 @@ export default function QuickApplication() {
   }, [job, loading, manual, review]);
   const run = async (fn: () => Promise<void>) => { if (lock.current) return; lock.current = true; setBusy(true); setError(''); try { await fn(); } catch (e) { setError(e instanceof Error ? e.message : 'Please try again.'); } finally { lock.current = false; setBusy(false); } };
   const begin = async (application: any) => {
-    if ((application.warnings || []).some((warning: any) => ['BLOCK', 'ADMIN_REVIEW'].includes(warning.behavior))) throw new Error('Resolve blocked warnings or obtain admin approval before generating.');
+    if ((application.warnings || []).some((warning: any) => warning.category !== 'DUPLICATE' && ['BLOCK', 'ADMIN_REVIEW'].includes(warning.behavior))) throw new Error('Resolve blocked warnings or obtain admin approval before generating.');
     for (const warning of application.warnings || []) if (warning.behavior === 'CONFIRM' && !warning.acknowledgedAt) await window.anchor.request(`/applications/warnings/${warning.id}/acknowledge`, 'PATCH', { reason: 'Reviewed in the desktop application.' });
     if (mode === 'manual') setManual(application);
     else setJob(await window.anchor.generate({ applicationId: application.id, templateId: form.templateId || undefined, title: `${application.jobTitle} · ${application.company}` }));
@@ -75,14 +75,14 @@ export default function QuickApplication() {
     if (!form.profileId || !form.jobTitle.trim() || !form.company.trim() || !form.jobDescription.trim()) throw new Error('Profile, job title, company, and job description are required.');
     if (!saveOnly && !form.templateId) throw new Error('Choose a resume template.');
     const { templateId, noJobLink, ...data } = form;
-    const payload = { ...data, jobUrl: noJobLink ? PLACEHOLDER_JOB_URL : data.jobUrl.trim() };
+    const payload = { ...data, jobUrl: noJobLink ? '' : data.jobUrl.trim() };
     const application: any = saved.current ? await api.updateApplication(saved.current.id, payload) : await api.createApplication(payload);
     saved.current = application;
     if (saveOnly) { finishedDraft.current = true; clearDraft(); toast.success('Application saved on your server'); await window.anchor.window('hide'); return; }
     const prompt = await api.previewGenerationPrompt(application.id);
     const warnings = (application.warnings || []).map((warning: any) => warning.matchedText || warning.message || warning.context || warning.category);
     if (prompt.usedDefault) warnings.push(`No prompt is assigned to ${prompt.profileName}; your default prompt will be used.`);
-    if (warnings.length) setReview({ app: application, warnings, blocked: (application.warnings || []).some((warning: any) => ['BLOCK', 'ADMIN_REVIEW'].includes(warning.behavior)) }); else await begin(application);
+    if (warnings.length) setReview({ app: application, warnings, blocked: (application.warnings || []).some((warning: any) => warning.category !== 'DUPLICATE' && ['BLOCK', 'ADMIN_REVIEW'].includes(warning.behavior)) }); else await begin(application);
   });
   const fresh = () => { saved.current = null; finishedDraft.current = false; setJob(null); setReview(null); setManual(null); setError(''); setForm(f => ({ ...blank, profileId: f.profileId, templateId: f.templateId, location: f.location, source: f.source })); void window.anchor.window('expand'); };
   useEffect(() => {

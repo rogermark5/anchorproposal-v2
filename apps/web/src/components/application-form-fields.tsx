@@ -1,6 +1,5 @@
 'use client';
 import type { ApplicationOption } from '@/lib/api';
-import { PLACEHOLDER_JOB_URL } from '@/lib/utils';
 import { ManagedApplicationOption } from '@/components/managed-application-option';
 type ProfileOption = {
   id: string;
@@ -91,7 +90,7 @@ export function ApplicationFormFields({
                 setForm({
                   ...form,
                   noJobLink: checked,
-                  jobUrl: checked ? PLACEHOLDER_JOB_URL : '',
+                  jobUrl: '',
                 });
               }}
               className="rounded border-slate-300"
@@ -105,12 +104,12 @@ export function ApplicationFormFields({
           onChange={(e) => setForm({ ...form, jobUrl: e.target.value, noJobLink: false })}
           className="w-full px-3 py-2 border border-[var(--border)] rounded-lg text-sm disabled:bg-slate-100 disabled:text-slate-500 disabled:cursor-not-allowed"
           type="url"
-          placeholder="https://"
+          placeholder={form.noJobLink ? 'No job link' : 'https://'}
           disabled={form.noJobLink}
         />
         {form.noJobLink && (
           <p className="mt-1 text-xs text-slate-500">
-            Job URL will be saved as {PLACEHOLDER_JOB_URL} (placeholder — not a real listing link).
+            This application will be saved without a job link.
           </p>
         )}
       </div>

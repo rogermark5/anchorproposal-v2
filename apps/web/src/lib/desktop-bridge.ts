@@ -1,4 +1,5 @@
 export interface DesktopBridge {
+  bootstrap(): Promise<{ settings: { server: string } }>;
   request(route: string, method?: string, body?: unknown): Promise<any>;
   download(id: string, filename?: string): Promise<unknown>;
   upload(route: string, file: { name: string; type: string; bytes: ArrayBuffer }): Promise<any>;

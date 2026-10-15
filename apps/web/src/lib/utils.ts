@@ -50,7 +50,7 @@ export function truncateText(value: string, maxChars = 25): string {
   return `${text.slice(0, maxChars).trimEnd()}…`;
 }
 
-/** Placeholder saved when the user checks “No job link”. */
+/** Legacy no-link placeholder; new applications save an empty URL. */
 export const PLACEHOLDER_JOB_URL = 'https://';
 
 export function hasRealJobUrl(url?: string | null): boolean {
