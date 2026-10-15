@@ -62,6 +62,16 @@ test('renderer requests cannot access credentials, arbitrary hosts or destructiv
   for (const [route, method] of [['https://evil.example', 'GET'], ['/auth/login', 'GET'], ['/auth/refresh', 'POST'], ['/applications/abc/generations/stream', 'POST'], ['/profiles/../../settings/ai', 'GET'], ['/profiles/%2e%2e/settings/ai', 'GET'], ['//evil.example/profiles', 'GET']]) assert.throws(() => apiRequest(route, method));
   for (const [route, method] of [['/settings/ai', 'GET'], ['/applications/abc', 'DELETE'], ['/profiles', 'POST'], ['/generations/abc/export', 'POST'], ['/profiles/abc', 'PUT'], ['/desktop/manage/releases', 'POST'], ['/users/abc/permissions', 'PATCH']]) apiRequest(route, method);
 });
+
+test('document editing and header appearance use only their supported native request methods', () => {
+  apiRequest('/settings/document-display', 'PATCH');
+  for (const action of ['draft-preview', 'edits']) {
+    apiRequest(`/generations/gen-1/${action}`, 'POST');
+    for (const method of ['GET', 'PUT', 'PATCH', 'DELETE']) assert.throws(() => apiRequest(`/generations/gen-1/${action}`, method));
+  }
+  assert.throws(() => apiRequest('/settings/document-display', 'POST'));
+  assert.throws(() => apiRequest('/generations/gen-1/edits/all', 'POST'));
+});
 test('only an encrypted refresh token is persisted; access token and password never reach disk', async t => {
   const s = await fixture(t, async () => json({ user: { id: 'test' }, accessToken: 'qa-access-secret', refreshToken: 'qa-refresh-secret' }));
   await s.authenticate('/auth/login', { password: 'qa-password-secret' });

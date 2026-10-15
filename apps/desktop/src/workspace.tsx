@@ -59,7 +59,7 @@ export default function Workspace({ preferences, hotkey }: { preferences: React.
       <div className="desktop-sidebar-bottom"><Link href="/desktop-settings" className={path === '/desktop-settings' ? 'active' : ''}><Keyboard size={18}/> Desktop preferences</Link><div className="desktop-account"><span className="desktop-avatar">{user?.firstName?.[0]}{user?.lastName?.[0]}</span><div><strong>{user?.firstName} {user?.lastName}</strong><small>{user?.role.toLowerCase()}</small></div><button aria-label="Sign out" title="Sign out" onClick={() => void logout()}><LogOut size={17}/></button></div></div>
     </aside>
     <section className="desktop-content"><header className="desktop-breadcrumb"><div><button aria-label="Back" onClick={router.back}><ArrowLeft size={17}/></button><button aria-label="Forward" onClick={() => history.forward()}><ArrowRight size={17}/></button><span>Workspace <i>/</i> <strong>{label}</strong></span></div><span className="server-status"><i/> Connected to your server</span></header>
-      <main className="desktop-page" key={path}><Suspense fallback={<div className="desktop-loading">Loading {label.toLowerCase()}…</div>}>{path === '/desktop-settings' ? <div className="preferences-view">{preferences}</div> : <Page/>}</Suspense></main>
+      <main className="desktop-page" key={path === '/settings' ? router.path : path}><Suspense fallback={<div className="desktop-loading">Loading {label.toLowerCase()}…</div>}>{path === '/desktop-settings' ? <div className="preferences-view">{preferences}</div> : <Page/>}</Suspense></main>
     </section>
   </div>;
 }

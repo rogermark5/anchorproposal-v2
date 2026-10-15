@@ -1,38 +1,74 @@
-const fs = require('node:fs/promises');
-const path = require('node:path');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
 const { createHash } = require('node:crypto');
 const { createRequire } = require('node:module');
-const builderRequire = createRequire(require.resolve('electron-builder'));
-const asar = createRequire(builderRequire.resolve('app-builder-lib'))('@electron/asar');
 const root = path.resolve(__dirname, '..');
-const hash = value => createHash('sha256').update(value).digest('hex');
-
+const manifest = require('../package.json');
+const builder = createRequire(require.resolve('electron-builder/package.json'));
+const builderLib = createRequire(builder.resolve('app-builder-lib/package.json'));
+const asar = builderLib('@electron/asar');
+const archive = path.join(root, 'release/build/win-unpacked/resources/app.asar');
+const packedFile = file => asar.extractFile(archive, path.normalize(file));
+const output = path.join(root, 'release', `v${manifest.version}`);
+const sha256 = async file => {
+  const hash = createHash('sha256');
+  for await (const chunk of fs.createReadStream(file)) hash.update(chunk);
+  return hash.digest('hex');
+};
 (async () => {
-  const archive = path.join(root, 'release/build/win-unpacked/resources/app.asar');
-  const entries = asar.listPackage(archive).map(name => name.replaceAll('\\', '/').replace(/^\//, ''));
+  const entries = asar.listPackage(archive).map(entry => entry.replaceAll('\\', '/'));
   assert.ok(entries.length > 20);
-  for (const name of entries) {
-    assert.match(name, /^(main|dist|assets)(\/|$)|^package\.json$/);
-    assert.ok(!/(^|\/)(node_modules|\.env[^/]*|session\.json|smoke\.cjs|test)(\/|$)/.test(name), `Unexpected packaged file: ${name}`);
+  for (const entry of entries) {
+    assert.match(entry, /^\/(?:(?:main|dist|assets)(?:\/|$)|package\.json$)/);
+    assert.ok(!/(?:^|\/)(?:\.env(?:\.[^/]*)?|node_modules|session\.json|smoke\.cjs|test|prisma)(?:\/|$)/i.test(entry), `Unexpected packaged file: ${entry}`);
   }
-  const manifest = JSON.parse(asar.extractFile(archive, 'package.json'));
-  assert.equal(manifest.version, require('../package.json').version);
-  const stagedManifest = JSON.parse(await fs.readFile(path.join(root, 'build-app/package.json'), 'utf8'));
-  assert.equal(manifest.apiServer, stagedManifest.apiServer, 'Packaged API server differs from the staged build.');
-  assert.equal(manifest.apiServer, require('../main/security.cjs').DESKTOP_API_SERVER, 'Packaged API server must use the fixed production address.');
-  for (const name of ['main/index.cjs', 'main/security.cjs', 'main/preload.cjs', 'main/session.cjs', 'main/generation.cjs', 'dist/styles.css', 'dist/index.html']) {
-    assert.equal(hash(asar.extractFile(archive, name)), hash(await fs.readFile(path.join(root, 'build-app', name))), `Stale packaged file: ${name}`);
+  const packaged = JSON.parse(packedFile('package.json').toString());
+  assert.equal(packaged.version, manifest.version);
+  assert.equal(packaged.apiServer, manifest.apiServer);
+  assert.equal(packaged.apiServer, require('../main/security.cjs').DESKTOP_API_SERVER);
+  const staged = JSON.parse(fs.readFileSync(path.join(root, 'build-app/package.json'), 'utf8'));
+  assert.equal(packaged.apiServer, staged.apiServer);
+  for (const file of ['main/index.cjs', 'main/security.cjs', 'main/preload.cjs', 'main/session.cjs', 'main/generation.cjs', 'dist/styles.css', 'dist/index.html']) {
+    assert.equal(createHash('sha256').update(packedFile(file)).digest('hex'),
+      await sha256(path.join(root, 'build-app', file)), `Stale packaged file: ${file}`);
   }
+  const security = packedFile('main/security.cjs').toString();
+  assert.ok(security.includes(manifest.apiServer));
+  assert.ok(security.includes('draft-preview|edits') && security.includes('document-display'));
+  const renderer = entries.filter(entry => entry.startsWith('/dist/') && entry.endsWith('.js'))
+    .map(entry => packedFile(entry.slice(1)).toString()).join('\n');
+  for (const feature of ['Preview and edit documents', 'Save and rebuild', 'This application will be saved without a job link.']) {
+    assert.ok(renderer.includes(feature), `Current web workflow missing from package: ${feature}`);
+  }
+  const portable = JSON.parse(fs.readFileSync(path.join(root, 'release/build/portable-build.json'), 'utf8'));
+  assert.equal(portable.Version, manifest.version);
+  assert.equal(portable.AppHash, await sha256(archive));
+  assert.equal(portable.ExecutableHash, await sha256(path.join(root, 'release/build/win-unpacked/AnchorProposal.exe')));
+  assert.equal(portable.BuildHash, await sha256(path.join(root, 'release/build/portable-payload.zip')));
   const artifacts = [];
-  for (const name of ['AnchorProposal.exe', 'AnchorProposal-Setup.exe']) {
-    const relative = `release/v${manifest.version}/${name}`;
-    const file = path.join(root, relative); const content = await fs.readFile(file);
-    assert.equal(content.subarray(0, 2).toString(), 'MZ');
-    artifacts.push({ file, bytes: content.length, sha256: hash(content) });
+  for (const name of ['AnchorProposal-Setup.exe', 'AnchorProposal.exe']) {
+    const file = path.join(output, name);
+    const header = Buffer.alloc(2), fd = fs.openSync(file, 'r');
+    try { fs.readSync(fd, header, 0, 2, 0); } finally { fs.closeSync(fd); }
+    assert.equal(header.toString(), 'MZ');
+    artifacts.push({ file, bytes: fs.statSync(file).size, sha256: await sha256(file) });
   }
-  const result = { version: manifest.version, apiServer: manifest.apiServer, packagedEntries: entries.length, verified: true, artifacts };
-  await fs.writeFile(path.join(root, 'release/verification.json'), JSON.stringify(result, null, 2));
-  await fs.writeFile(path.join(root, `release/v${manifest.version}/verification.json`), JSON.stringify(result, null, 2));
-  console.log(JSON.stringify(result, null, 2));
+  let native;
+  if (process.argv[2]) {
+    native = JSON.parse(fs.readFileSync(path.resolve(process.argv[2]), 'utf8'));
+    assert.ok(native.passed > 0);
+    assert.equal(native.providerCalls, 0);
+  }
+  const report = { version: manifest.version, apiServer: manifest.apiServer, packagedEntries: entries.length,
+    verified: true, ...(native ? { nativeChecks: native.passed, providerCalls: native.providerCalls } : {}), artifacts };
+  if (process.argv[3]) {
+    const startup = JSON.parse(fs.readFileSync(path.resolve(process.argv[3]), 'utf8'));
+    assert.ok(typeof startup.mainToPaintMs === 'number' && startup.mainToPaintMs > 0);
+    report.portableStartupVerified = true;
+    report.portableStartup = startup;
+  }
+  fs.writeFileSync(path.join(output, 'verification.json'), JSON.stringify(report, null, 2) + '\n');
+  fs.writeFileSync(path.join(root, 'release/verification.json'), JSON.stringify(report, null, 2) + '\n');
+  console.log(JSON.stringify(report, null, 2));
 })().catch(error => { console.error(error); process.exitCode = 1; });

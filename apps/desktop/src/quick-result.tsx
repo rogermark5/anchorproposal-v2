@@ -1,17 +1,19 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Copy, Download, LoaderCircle } from 'lucide-react';
-import { api } from '../../web/src/lib/api';
+import { api, type GenerationDocumentPreview } from '../../web/src/lib/api';
 import { GetAnswersPanel } from '../../web/src/components/get-answers';
 import { TemplatePreviewFrame } from '../../web/src/components/template-preview-frame';
+import { GenerationPreviewDialog } from '../../web/src/components/generation-preview-dialog';
 
 const tabs = ['Resume', 'Cover letter', 'Answers'] as const;
 type Tab = typeof tabs[number];
 type Letter = { greeting?: string; paragraphs?: string[]; closing?: string; signatureName?: string };
 
 export default function QuickResult({ job, onBusyChange }: { job: Job; onBusyChange?: (busy: boolean) => void }) {
-  const generationId = job.generationId!;
+  const [generationId, setGenerationId] = useState(job.generationId!);
+  const [dialogOpen, setDialogOpen] = useState(false);
   const [tab, setTab] = useState<Tab>('Resume');
-  const [preview, setPreview] = useState<{ html: string; pageSize: string } | null>(null);
+  const [preview, setPreview] = useState<GenerationDocumentPreview | null>(null);
   const [letter, setLetter] = useState('');
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
@@ -22,11 +24,11 @@ export default function QuickResult({ job, onBusyChange }: { job: Job; onBusyCha
   const exportLock = useRef(false);
   const tabRefs = useRef<(HTMLButtonElement | null)[]>([]);
 
-  useEffect(() => { onBusyChange?.(saving); return () => onBusyChange?.(false); }, [saving, onBusyChange]);
+  useEffect(() => { onBusyChange?.(saving || dialogOpen); return () => onBusyChange?.(false); }, [saving, dialogOpen, onBusyChange]);
 
   useEffect(() => {
     let live = true;
-    setLoading(true); setLoadError('');
+    setLoading(true); setLoadError(''); setPreview(null); setLetter('');
     void Promise.allSettled([api.getGenerationPreview(generationId), api.getGeneration(generationId)]).then(([html, generation]) => {
       if (!live) return;
       if (html.status === 'fulfilled') setPreview(html.value);
@@ -62,13 +64,13 @@ export default function QuickResult({ job, onBusyChange }: { job: Job; onBusyCha
 
   useEffect(() => {
     const keyboard = (event: KeyboardEvent) => {
-      if (!event.ctrlKey || event.altKey || event.shiftKey) return;
+      if (dialogOpen || !event.ctrlKey || event.altKey || event.shiftKey) return;
       if (['1', '2', '3'].includes(event.key)) { event.preventDefault(); selectTab(tabs[Number(event.key) - 1]); }
       if (event.key.toLowerCase() === 's' && tab !== 'Answers') { event.preventDefault(); void save('PDF'); }
     };
     window.addEventListener('keydown', keyboard);
     return () => window.removeEventListener('keydown', keyboard);
-  }, [save, selectTab, tab]);
+  }, [dialogOpen, save, selectTab, tab]);
 
   return <section className="quick-result" aria-label="Application documents and answers">
     <div className="quick-result-tabs" role="tablist" aria-label="Application documents">
@@ -86,6 +88,7 @@ export default function QuickResult({ job, onBusyChange }: { job: Job; onBusyCha
     {tab !== 'Answers' && <div className="quick-result-toolbar">
       <button disabled={saving || loading || tab === 'Cover letter' && !letter} className="native-primary" onClick={() => void save('PDF')}><Download size={15}/>{saving ? 'Saving…' : 'Save PDF'}<kbd>Ctrl S</kbd></button>
       <button disabled={saving || loading || tab === 'Cover letter' && !letter} className="native-secondary" onClick={() => void save('DOCX')}>Word</button>
+      <button disabled={saving || loading || !preview} className="native-secondary" onClick={() => setDialogOpen(true)}>Preview and edit documents</button>
       {tab === 'Cover letter' && letter && <button className="native-secondary" onClick={() => void window.anchor.copy(letter).then(() => setStatus('Cover letter copied.')).catch(error => setStatus(error.message))}><Copy size={14}/>Copy</button>}
     </div>}
     {tab !== 'Answers' && loading && <p className="native-hint" role="status"><LoaderCircle className="native-spin" size={15}/>Loading documents…</p>}
@@ -94,10 +97,11 @@ export default function QuickResult({ job, onBusyChange }: { job: Job; onBusyCha
       {preview && <TemplatePreviewFrame html={preview.html} pageSize={preview.pageSize}/>}
     </div>
     <div id="result-panel-1" role="tabpanel" aria-labelledby="result-tab-1" hidden={tab !== 'Cover letter'}>
-      {letter ? <div className="quick-letter">{letter}</div> : !loading && <p className="native-hint">No cover letter was included in this response. Generate a new version with a cover letter to save it here.</p>}
+      {preview?.coverLetterHtml ? <TemplatePreviewFrame html={preview.coverLetterHtml} pageSize={preview.pageSize}/> : letter ? <div className="quick-letter">{letter}</div> : !loading && <p className="native-hint">No cover letter was included in this response. Generate a new version with a cover letter to save it here.</p>}
     </div>
     <div id="result-panel-2" role="tabpanel" aria-labelledby="result-tab-2" hidden={tab !== 'Answers'}>
       {answersOpened && <GetAnswersPanel generationId={generationId} jobTitle={job.title} className="quick-answers"/>}
     </div>
+    {dialogOpen && <GenerationPreviewDialog applicationId={job.applicationId} initialGenerationId={generationId} onClose={() => setDialogOpen(false)} onSaved={id => { setGenerationId(id); setStatus('Saved document version. Downloads use your saved changes.'); }}/>}
   </section>;
 }
