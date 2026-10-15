@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
+import { desktopBridge } from '@/lib/desktop-bridge';
 import { Check, FileText, LockKeyhole, Plus, Pencil, Users, UserRound, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { api, type DocumentKind, type ExperienceTitleMode, type GenerationWorkflow, type PrivatePrompt } from '@/lib/api';
@@ -61,13 +62,16 @@ export function PrivateGenerationSettings() {
   const [error, setError] = useState('');
   const [answerText, setAnswerText] = useState('');
   const [savingAnswer, setSavingAnswer] = useState(false);
+  const [showJobTitle, setShowJobTitle] = useState(true);
+  const [savingDisplay, setSavingDisplay] = useState(false);
   const loaded = useRef(false);
 
   const applyWorkflow = (data: GenerationWorkflow) => {
     setWorkflow(data); setDefaultText(instructionsOnly(data.defaultPrompt.content));
+    setShowJobTitle(data.documentDisplay?.showJobTitle !== false);
     setDrafts(Object.fromEntries(data.profiles.map(profile => [profile.id, { resumePromptId: profile.resumePromptId || '', coverLetterPromptId: profile.coverLetterPromptId || '' }])));
     if (!loaded.current) {
-      const params = new URLSearchParams(window.location.search); const requested = params.get('way');
+      const params = new URLSearchParams(desktopBridge() ? window.location.hash.split('?')[1] || '' : window.location.search); const requested = params.get('way');
       setWay(requested === 'user' || requested === 'profile' || requested === 'separate' ? requested : data.mode);
       const requestedProfile = params.get('profile');
       setProfileId(data.profiles.some(profile => profile.id === requestedProfile) ? requestedProfile! : data.profiles[0]?.id || '');
@@ -120,6 +124,12 @@ export function PrivateGenerationSettings() {
         <details className="rounded-lg bg-slate-50 p-3 text-sm"><summary className="cursor-pointer font-medium">Check assignments for all profiles</summary><ul className="mt-3 space-y-2">{workflow.profiles.map(profile => { const ready = Boolean(profile.resumePromptId && (way !== 'separate' || profile.coverLetterPromptId)); return <li key={profile.id} className="flex items-center justify-between gap-3"><span>{profile.name}</span><span className={ready ? 'text-primary' : 'text-amber-700'}>{ready ? 'Assigned' : 'Needs a prompt'}</span></li>; })}</ul></details>
       </>}
       <div className="flex flex-wrap items-center gap-3 border-t border-slate-100 pt-5"><button disabled={busy || !ready || !dirty} onClick={() => void saveWay()} className="rounded-lg bg-primary px-5 py-2.5 text-sm font-medium text-white disabled:opacity-50">{busy ? 'Saving…' : workflow.mode === way ? way === 'user' ? 'Save my prompt' : 'Save profile prompts' : 'Save and use this way'}</button><p className="text-xs text-slate-500">{!ready ? 'Complete the required prompt selection above.' : dirty ? 'Your changes are not saved yet.' : 'Saved. This setup is ready to use.'}</p></div>
+    </section>}
+    {workflow && <section className="space-y-3 rounded-xl border border-slate-200 bg-white p-5">
+      <h3 className="font-semibold text-slate-800">Resume appearance</h3>
+      <label className="block text-sm font-medium">Job title below your name<select aria-label="Header job title visibility" value={showJobTitle ? 'visible' : 'hidden'} disabled={savingDisplay} onChange={event => setShowJobTitle(event.target.value === 'visible')} className="mt-2 block w-full max-w-sm rounded-lg border border-slate-300 bg-white p-3"><option value="visible">Visible</option><option value="hidden">Hidden</option></select></label>
+      <p className="text-xs text-slate-500">Applies to the header in your previews, downloads and public resume links. Job titles in your work history stay visible. Skills come from the generated JSON response and can be edited in the document preview.</p>
+      <button disabled={savingDisplay || showJobTitle === (workflow.documentDisplay?.showJobTitle !== false)} onClick={async () => { setSavingDisplay(true); try { const display = await api.updateDocumentDisplay({ showJobTitle }); setWorkflow(previous => previous ? { ...previous, documentDisplay: display } : previous); toast.success('Resume appearance saved'); } catch (error) { toast.error(error instanceof Error ? error.message : 'Save failed'); } finally { setSavingDisplay(false); } }} className="rounded-lg bg-primary px-4 py-2 text-sm text-white disabled:opacity-50">{savingDisplay ? 'Saving…' : 'Save appearance'}</button>
     </section>}
     {workflow && <details className="rounded-xl border border-slate-200 bg-white p-5"><summary className="cursor-pointer text-sm font-medium text-slate-600">Optional: my application-answer instructions</summary><p className="mt-3 text-xs text-slate-500">Used when you ask application questions after generating a resume. These instructions are private to your account.</p><textarea aria-label="My application-answer instructions" value={answerText} onChange={event => setAnswerText(event.target.value)} rows={5} disabled={savingAnswer} className="mt-3 block w-full rounded-lg border p-3 text-sm" /><button disabled={savingAnswer} onClick={async () => { setSavingAnswer(true); try { await api.updateAnswerPrompt(answerText); toast.success('Your answer instructions were saved'); } catch (error) { toast.error(error instanceof Error ? error.message : 'Save failed'); } finally { setSavingAnswer(false); } }} className="mt-3 rounded-lg border px-4 py-2 text-sm">{savingAnswer ? 'Saving…' : 'Save my answer instructions'}</button></details>}
     {editor && workflow && <PromptEditor editor={editor} rules={workflow.jsonRules[editor.kind]} onClose={() => setEditor(null)} onSave={async (name, content, experienceTitleMode) => {

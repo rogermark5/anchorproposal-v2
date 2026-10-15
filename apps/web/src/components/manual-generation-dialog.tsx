@@ -117,7 +117,7 @@ export function ManualGenerationDialog({
             Copy the complete prompt into your preferred model. Paste its JSON response below to save the resume and use the usual preview and download options.
           </p>
           <p className="text-xs text-slate-500">For a cover letter, include coverLetter in the same JSON with greeting, paragraphs (an array of paragraph strings), closing, and signatureName. Without it, only the resume is saved. Do not append a separate plain-text letter.</p>
-          {prompt?.experienceTitleMode === 'tailored' && <p className="text-xs text-slate-500">Return summary, experiences, educations, and certificates. Include one experience per saved experience, in the same order, with role and bullets. Copy education and certificates from the expanded prompt as flat arrays, using [] when empty. Saved profile facts are preserved.</p>}
+          {prompt?.experienceTitleMode === 'tailored' && <p className="text-xs text-slate-500">Return summary, skills, experiences, educations, and certificates. Include one experience per saved experience, in the same order, with role and bullets. Copy education and certificates from the expanded prompt as flat arrays, using [] when empty. Saved profile facts are preserved.</p>}
           {loading ? (
             <div role="status" className="flex items-center gap-2 py-8 text-sm text-slate-500">
               <LoadingSpinner /> Preparing the full prompt…

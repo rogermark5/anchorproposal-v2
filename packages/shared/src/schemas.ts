@@ -101,6 +101,17 @@ export const generationOutputSchema = z.object({
 
 export type GenerationOutput = z.infer<typeof generationOutputSchema>;
 
+const editedText = z.string().trim().max(6000);
+export const documentEditsSchema = z.object({
+  summary: z.string().trim().min(1, 'Enter a professional summary.').max(12000),
+  skills: z.array(z.record(z.string().trim().min(1, 'Enter a skill category.').max(150), editedText)).max(60),
+  experiences: z.array(z.object({ title: z.string().trim().min(1, 'Enter a position for each experience.').max(300), bullets: z.array(editedText.min(1)).min(1, 'Enter at least one bullet for each experience.').max(80) }).strict()).max(100),
+  educations: z.array(z.object({ degree: editedText, institution: editedText, dates: editedText, location: editedText.optional() }).strict().refine(row => row.degree || row.institution, 'Enter a degree or institution, or remove the empty education entry.')).max(50),
+  certificates: z.array(z.object({ name: editedText.min(1, 'Enter a certification name.'), issuer: editedText, date: editedText }).strict()).max(100),
+  coverLetter: z.object({ greeting: editedText.min(1, 'Enter a cover letter greeting.'), paragraphs: z.array(editedText.min(1)).min(1, 'Enter cover letter paragraph text.').max(30), closing: editedText.min(1, 'Enter a cover letter closing.') }).strict().optional(),
+  idempotencyKey: z.string().min(16).max(150).optional(),
+}).strict();
+
 const OBJECT_TEXT_KEYS = [
   'text',
   'description',
@@ -285,6 +296,7 @@ export const templateConfigSchema = z.object({
     .default({}),
   contact: z
     .object({
+      showJobTitle: z.boolean().default(true),
       layout: z.enum(['single', 'stacked']).default('single'),
       showEmail: z.boolean().default(true),
       showPhone: z.boolean().default(true),

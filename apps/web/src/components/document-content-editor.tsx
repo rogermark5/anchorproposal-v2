@@ -1,0 +1,42 @@
+'use client';
+
+import type { DocumentEdits, ResumeDocument } from '@/lib/api';
+
+const text = (value: unknown) => typeof value === 'string' ? value : '';
+export function editableDocument(content: ResumeDocument): DocumentEdits {
+  return {
+    summary: content.summary,
+    skills: content.skills.flatMap(row => Object.entries(row).map(([category, skills]) => ({ [category]: skills }))),
+    experiences: content.experiences.map(row => ({ title: text(row.title || row.role || row.position), bullets: Array.isArray(row.bullets) ? row.bullets.map(String) : [] })),
+    educations: content.educations.map(row => ({ degree: text(row.degree || row.major), institution: text(row.institution || row.school), dates: text(row.dates) || [row.startDate, row.endDate].filter(Boolean).join(' – ') })),
+    certificates: content.certificates.map(row => ({ name: text(row.name || row.title), issuer: text(row.issuer || row.organization), date: text(row.date || row.issueDate) })),
+    ...(content.coverLetter ? { coverLetter: { greeting: content.coverLetter.greeting, paragraphs: [...content.coverLetter.paragraphs], closing: content.coverLetter.closing } } : {}),
+  };
+}
+
+export function DocumentContentEditor({ value, original, disabled, onChange }: { value: DocumentEdits; original: ResumeDocument; disabled: boolean; onChange: (value: DocumentEdits) => void }) {
+  const field = 'mt-1 block w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-normal leading-relaxed disabled:opacity-60';
+  const arrayField = <K extends 'educations' | 'certificates'>(key: K, index: number, name: string, text: string) => onChange({ ...value, [key]: value[key].map((row, position) => position === index ? { ...row, [name]: text } : row) });
+  return <div className="space-y-5" aria-label="Document content editor">
+    <div className="rounded-lg bg-primary/5 p-3 text-xs leading-relaxed text-slate-600"><strong className="block text-slate-800">{original.contact.name}</strong>Name, contact details, employers and employment dates come from the saved profile. You can edit the resume text and cover letter below.</div>
+    <section className="space-y-3"><h3 className="font-semibold">Resume</h3>
+      <label className="block text-sm font-medium">Professional summary<textarea aria-label="Edit professional summary" value={value.summary} maxLength={12000} rows={5} disabled={disabled} onChange={event => onChange({ ...value, summary: event.target.value })} className={field} /></label>
+      <fieldset className="space-y-2"><legend className="mb-2 text-sm font-semibold">Skills</legend>{value.skills.map((row, index) => { const [category, skills] = Object.entries(row)[0] || ['', '']; return <div key={index} className="space-y-2 rounded-lg border border-slate-200 p-3">
+        <label className="block text-xs">Category<input aria-label={`Skill category ${index + 1}`} value={category} maxLength={150} disabled={disabled} onChange={event => onChange({ ...value, skills: value.skills.map((item, position) => position === index ? { [event.target.value]: skills } : item) })} className={field} /></label>
+        <label className="block text-xs">Skills<textarea aria-label={`Skills ${index + 1}`} rows={2} maxLength={6000} value={skills} disabled={disabled} onChange={event => onChange({ ...value, skills: value.skills.map((item, position) => position === index ? { [category]: event.target.value } : item) })} className={field} /></label>
+        <button type="button" disabled={disabled} onClick={() => onChange({ ...value, skills: value.skills.filter((_, position) => position !== index) })} className="text-xs text-red-600">Remove skill group</button></div>; })}
+        <button type="button" disabled={disabled} onClick={() => onChange({ ...value, skills: [...value.skills, { Skills: '' }] })} className="text-sm font-medium text-primary">+ Add skill group</button>
+      </fieldset>
+      <fieldset className="space-y-3"><legend className="mb-2 text-sm font-semibold">Experience</legend>{value.experiences.map((row, index) => <div key={index} className="space-y-2 rounded-lg border border-slate-200 p-3"><p className="text-xs text-slate-500">{text(original.experiences[index]?.company)} · {text(original.experiences[index]?.dates)}</p>
+        <label className="block text-xs">Position<input aria-label={`Experience position ${index + 1}`} value={row.title} maxLength={300} disabled={disabled} onChange={event => onChange({ ...value, experiences: value.experiences.map((item, position) => position === index ? { ...item, title: event.target.value } : item) })} className={field} /></label>
+        <label className="block text-xs">Bullet points — one per line<textarea aria-label={`Experience bullets ${index + 1}`} rows={7} value={row.bullets.join('\n')} disabled={disabled} onChange={event => onChange({ ...value, experiences: value.experiences.map((item, position) => position === index ? { ...item, bullets: event.target.value.split('\n') } : item) })} className={field} /></label></div>)}</fieldset>
+      <fieldset className="space-y-3"><legend className="mb-2 text-sm font-semibold">Education</legend>{value.educations.map((row, index) => <div key={index} className="space-y-2 rounded-lg border border-slate-200 p-3">{(['degree', 'institution', 'dates'] as const).map(name => <label key={name} className="block text-xs capitalize">{name}<input aria-label={`Education ${name} ${index + 1}`} value={row[name]} disabled={disabled} onChange={event => arrayField('educations', index, name, event.target.value)} className={field} /></label>)}<button disabled={disabled} onClick={() => onChange({ ...value, educations: value.educations.filter((_, position) => position !== index) })} className="text-xs text-red-600">Remove education</button></div>)}<button disabled={disabled} onClick={() => onChange({ ...value, educations: [...value.educations, { degree: '', institution: '', dates: '' }] })} className="text-sm font-medium text-primary">+ Add education</button></fieldset>
+      <fieldset className="space-y-3"><legend className="mb-2 text-sm font-semibold">Certifications</legend>{value.certificates.map((row, index) => <div key={index} className="space-y-2 rounded-lg border border-slate-200 p-3">{(['name', 'issuer', 'date'] as const).map(name => <label key={name} className="block text-xs capitalize">{name}<input aria-label={`Certification ${name} ${index + 1}`} value={row[name]} disabled={disabled} onChange={event => arrayField('certificates', index, name, event.target.value)} className={field} /></label>)}<button disabled={disabled} onClick={() => onChange({ ...value, certificates: value.certificates.filter((_, position) => position !== index) })} className="text-xs text-red-600">Remove certification</button></div>)}<button disabled={disabled} onClick={() => onChange({ ...value, certificates: [...value.certificates, { name: '', issuer: '', date: '' }] })} className="text-sm font-medium text-primary">+ Add certification</button></fieldset>
+    </section>
+    <section className="space-y-3 border-t border-slate-200 pt-5"><h3 className="font-semibold">Cover letter</h3>{value.coverLetter ? <>
+      <label className="block text-sm font-medium">Greeting<input aria-label="Edit cover letter greeting" disabled={disabled} value={value.coverLetter.greeting} onChange={event => onChange({ ...value, coverLetter: { ...value.coverLetter!, greeting: event.target.value } })} className={field} /></label>
+      <label className="block text-sm font-medium">Letter paragraphs<textarea aria-label="Edit cover letter paragraphs" disabled={disabled} value={value.coverLetter.paragraphs.join('\n\n')} rows={16} onChange={event => onChange({ ...value, coverLetter: { ...value.coverLetter!, paragraphs: event.target.value.split(/\n\s*\n/) } })} className={field} /><span className="mt-1 block text-xs font-normal text-slate-500">Separate paragraphs with a blank line. The saved name signs the letter automatically.</span></label>
+      <label className="block text-sm font-medium">Closing<input aria-label="Edit cover letter closing" disabled={disabled} value={value.coverLetter.closing} onChange={event => onChange({ ...value, coverLetter: { ...value.coverLetter!, closing: event.target.value } })} className={field} /></label>
+    </> : <button disabled={disabled} onClick={() => onChange({ ...value, coverLetter: { greeting: 'Dear Hiring Manager,', paragraphs: [''], closing: 'Sincerely,' } })} className="text-sm font-medium text-primary">+ Write a cover letter</button>}</section>
+  </div>;
+}

@@ -86,6 +86,7 @@ export class DocumentRendererService {
         headingUppercase?: boolean;
       };
       contact?: {
+        showJobTitle?: boolean;
         layout?: string;
         showEmail?: boolean;
         showPhone?: boolean;
@@ -151,7 +152,7 @@ export class DocumentRendererService {
         ],
       }),
     ];
-    if (contact.title) {
+    if (contact.title && cfg.contact?.showJobTitle !== false) {
       children.push(
         new Paragraph({
           alignment: align,
@@ -367,6 +368,7 @@ export class DocumentRendererService {
     const cfg = templateConfigSchema.parse(templateConfig) as {
       colors?: { primary?: string; heading?: string; body?: string };
       typography?: { bodyFont?: string; baseFontSize?: number; lineHeight?: number };
+      contact?: { showJobTitle?: boolean };
     };
     const font = cfg.typography?.bodyFont || 'Georgia';
     const bodyColor = cfg.colors?.body || '#334155';
@@ -382,7 +384,7 @@ export class DocumentRendererService {
 
     const docxChildren: Paragraph[] = [
       new Paragraph({ spacing: { after: 90 }, children: [new TextRun({ text: contact.name, bold: true, size: 40, color: primary.replace('#', '') })] }),
-      ...(contact.title ? [new Paragraph({ spacing: { after: 100 }, children: [new TextRun({ text: contact.title, bold: true, size: 22 })] })] : []),
+      ...(contact.title && cfg.contact?.showJobTitle !== false ? [new Paragraph({ spacing: { after: 100 }, children: [new TextRun({ text: contact.title, bold: true, size: 22 })] })] : []),
       ...coverLetterContactLines(contact).map(line => new Paragraph({ spacing: { after: 40 }, children: [new TextRun({ text: line, size: 18 })] })),
       new Paragraph({ spacing: { after: 200 }, children: [] }),
       new Paragraph({ children: [new TextRun({ text: dateStr, color: headingColor.replace('#', '') })] }),

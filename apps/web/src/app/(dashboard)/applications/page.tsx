@@ -9,7 +9,7 @@ import { api } from '@/lib/api';
 import { GenerationPreviewDialog } from '@/components/generation-preview-dialog';
 import type { ApplicationOption } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
-import { STATUS_COLORS, formatStatus, formatDate, truncateText, hasRealJobUrl, PLACEHOLDER_JOB_URL, cn, APPLICATION_STATUSES } from '@/lib/utils';
+import { STATUS_COLORS, formatStatus, formatDate, truncateText, hasRealJobUrl, cn, APPLICATION_STATUSES } from '@/lib/utils';
 import { ApplicationFormFields } from '@/components/application-form-fields';
 import {
   Plus,
@@ -135,7 +135,7 @@ const BASE_COL_COUNT = 12;
 type AppsTab = 'mine' | 'team' | 'all';
 
 function warningsAllowGenerate(warnings: AppWarning[]): boolean {
-  return !warnings.some((w) => w.behavior === 'BLOCK' || w.behavior === 'ADMIN_REVIEW');
+  return !warnings.some((w) => w.category !== 'DUPLICATE' && (w.behavior === 'BLOCK' || w.behavior === 'ADMIN_REVIEW'));
 }
 
 function formatGenerationStatus(status?: string): string {
@@ -646,7 +646,7 @@ function ApplicationsPageInner() {
         location: (full.location as string) || '',
         workArrangement: (full.workArrangement as string) || 'REMOTE',
         source: (full.source as string) || '',
-        jobUrl: noLink ? PLACEHOLDER_JOB_URL : url,
+        jobUrl: noLink ? '' : url,
         noJobLink: noLink,
         jobDescription: (full.jobDescription as string) || '',
       });
@@ -670,7 +670,7 @@ function ApplicationsPageInner() {
       const { templateId, noJobLink, ...rest } = form;
       const createPayload = {
         ...rest,
-        jobUrl: noJobLink ? PLACEHOLDER_JOB_URL : form.jobUrl.trim(),
+        jobUrl: noJobLink ? '' : form.jobUrl.trim(),
       };
       const created = (await api.createApplication(createPayload)) as {
         id: string;
@@ -855,7 +855,7 @@ function ApplicationsPageInner() {
         location: form.location,
         workArrangement: form.workArrangement,
         source: form.source,
-        jobUrl: form.noJobLink ? PLACEHOLDER_JOB_URL : form.jobUrl.trim(),
+        jobUrl: form.noJobLink ? '' : form.jobUrl.trim(),
         jobDescription: form.jobDescription,
       });
       toast.success('Application updated');
@@ -1522,7 +1522,7 @@ function ApplicationsPageInner() {
         </div>
       )}
 
-      {previewFor && <GenerationPreviewDialog {...previewFor} onClose={() => setPreviewFor(null)} />}
+      {previewFor && <GenerationPreviewDialog {...previewFor} onClose={() => setPreviewFor(null)} onSaved={() => void load()} />}
       {/* Delete confirm */}
       {deleteApp && (
         <div
@@ -1590,7 +1590,7 @@ function ApplicationsPageInner() {
                     <AlertTriangle className="w-5 h-5" />
                   </div>
                   <div>
-                    <h3 className="text-lg font-semibold text-slate-800">Application warnings</h3>
+                    <h3 className="text-lg font-semibold text-slate-800">{postCreate.warnings.every(w => w.category === 'DUPLICATE') ? 'Duplicate application found' : 'Application warnings'}</h3>
                     <p className="text-sm text-slate-600 mt-1">
                       Review these before generating a resume for{' '}
                       <span className="font-medium text-slate-800">{postCreate.jobTitle}</span>.
@@ -1605,9 +1605,9 @@ function ApplicationsPageInner() {
                     >
                       <p className="text-sm font-medium text-slate-800">{formatStatus(w.category)}</p>
                       <p className="text-sm text-slate-600 mt-1">{w.matchedText}</p>
-                      <p className="text-[11px] text-slate-500 mt-1">
+                      {w.category !== 'DUPLICATE' && <p className="text-[11px] text-slate-500 mt-1">
                         {w.severity} · {w.behavior}
-                      </p>
+                      </p>}
                     </li>
                   ))}
                 </ul>
@@ -1635,7 +1635,7 @@ function ApplicationsPageInner() {
                     onClick={() => requestPostCreateGeneration(postCreate.appId, postCreate.templateId)}
                     className="px-4 py-2 text-sm font-medium text-white bg-primary rounded-lg hover:bg-primary-light disabled:opacity-50"
                   >
-                    Continue
+                    {postCreate.warnings.every(w => w.category === 'DUPLICATE') ? 'Confirm and generate' : 'Continue'}
                   </button>
                 </div>
               </>

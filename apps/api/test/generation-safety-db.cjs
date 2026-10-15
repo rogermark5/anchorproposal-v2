@@ -55,9 +55,24 @@ const { DeepseekService } = require('../dist/deepseek/deepseek.service');
 
         const apps = new ApplicationsService(db, profiles, new RulesService(db), {});
         const application = await apps.create({ profileId: profile.id, jobTitle: 'Developer', company: 'Hiring Co', jobDescription: 'Build Java APIs', jobUrl: 'https://example.com/jobs/123?utm_source=test' }, actor);
-        await assert.rejects(apps.create({ profileId: profile.id, jobTitle: 'Developer', company: 'Hiring Co', jobDescription: 'Build Java APIs', jobUrl: 'https://www.example.com/jobs/123/#apply' }, actor), /already has an application/);
+        const duplicate = await apps.create({ profileId: profile.id, jobTitle: 'Developer', company: 'Hiring Co', jobDescription: 'Build Java APIs', jobUrl: 'https://www.example.com/jobs/123/#apply' }, actor);
+        assert.ok(duplicate.warnings.some(w => w.category === 'DUPLICATE' && w.behavior === 'CONFIRM'));
+        assert.equal(new RulesService(db).canGenerate(duplicate.warnings).allowed, true);
         await assert.rejects(apps.update(application.id, { jobUrl: 'javascript:alert(1)' }, actor), /HTTP/);
-        console.log('PASS duplicate job links and invalid URL rejection');
+        console.log('PASS duplicate links allow generation after confirmation, invalid URLs still fail');
+
+        const noLink = await apps.create({ profileId: profile.id, jobTitle: 'Engineer', company: 'No Link Co', jobDescription: 'Build APIs', jobUrl: '' }, actor);
+        const legacyNoLink = await apps.create({ profileId: profile.id, jobTitle: 'Engineer', company: 'Other No Link Co', jobDescription: 'Build APIs', jobUrl: 'https://' }, actor);
+        for (const saved of [noLink, legacyNoLink]) {
+          assert.equal(saved.jobUrl, null); assert.equal(saved.normalizedJobUrl, null);
+          assert.ok(!saved.warnings.some(w => w.category === 'DUPLICATE'));
+          assert.equal(new RulesService(db).canGenerate(saved.warnings).allowed, true);
+        }
+        await apps.update(noLink.id, { jobUrl: 'https://example.com/jobs/456' }, actor);
+        await apps.update(noLink.id, { jobUrl: '' }, actor);
+        const cleared = await tx.application.findUnique({ where: { id: noLink.id } });
+        assert.equal(cleared.jobUrl, null); assert.equal(cleared.normalizedJobUrl, null);
+        console.log('PASS no-link create, legacy clients, URL removal and generation eligibility');
 
         const snapshot = profiles.buildProfileSnapshot(profile);
         const output = new DeepseekService(settings).parseManualResponse(JSON.stringify({ contact: { name: 'Basil Bruce Crow', email: 'wrong@qa.invalid' }, summary: 'Java developer.',

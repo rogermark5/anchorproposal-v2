@@ -183,7 +183,7 @@ export class ApplicationsService {
 
     if (!app) throw new NotFoundException('Application not found');
     await this.assertCanAccessApp(app, user);
-    return { ...app, generations: app.generations.map(gen => gen.structuredOutputJson ? { ...redactPromptMetadata(gen), requiresRegeneration: hasProfileIdentityConflict(gen.structuredOutputJson as any, gen.profileSnapshotJson), structuredOutputJson: bindProfileOutput(gen.structuredOutputJson as any, gen.profileSnapshotJson) } : redactPromptMetadata(gen)), warnings: this.rulesService.contextualizeWarnings(app.warnings, app) };
+    return { ...app, generations: app.generations.map(gen => gen.structuredOutputJson ? { ...redactPromptMetadata(gen), requiresRegeneration: hasProfileIdentityConflict(gen.structuredOutputJson as any, gen.profileSnapshotJson), structuredOutputJson: bindProfileOutput(gen.structuredOutputJson as any, gen.profileSnapshotJson, gen.isUserEdited) } : redactPromptMetadata(gen)), warnings: this.rulesService.contextualizeWarnings(app.warnings, app) };
   }
 
   async create(data: Record<string, unknown>, user: AuthUser) {
@@ -198,7 +198,8 @@ export class ApplicationsService {
 
     const profileId = data.profileId as string;
     await this.profilesService.checkAccess(profileId, user);
-    const canonicalUrl = await this.assertUniqueJobLink(profileId, data.jobUrl);
+    const canonicalUrl = normalizedJobUrl(data.jobUrl);
+    const jobUrl = canonicalUrl ? (data.jobUrl as string).trim() : null;
 
     const validation = await this.rulesService.validateApplication({
       jobTitle: data.jobTitle as string,
@@ -207,6 +208,7 @@ export class ApplicationsService {
       workArrangement: data.workArrangement as string,
       jobDescription: data.jobDescription as string,
       profileId,
+      jobUrl: jobUrl ?? undefined,
     });
 
     const app = await this.prisma.application.create({
@@ -219,7 +221,7 @@ export class ApplicationsService {
         location: data.location as string,
         workArrangement: (data.workArrangement as WorkArrangement) || WorkArrangement.UNKNOWN,
         source: data.source as string,
-        jobUrl: data.jobUrl as string,
+        jobUrl,
         normalizedJobUrl: canonicalUrl,
         jobDescription: data.jobDescription as string,
         status: ApplicationStatus.SAVED,
@@ -254,7 +256,7 @@ export class ApplicationsService {
       location?: string;
       workArrangement?: WorkArrangement;
       source?: string;
-      jobUrl?: string;
+      jobUrl?: string | null;
       jobDescription?: string;
     },
     user: AuthUser,
@@ -269,7 +271,9 @@ export class ApplicationsService {
     }
 
     const company = data.company ?? app.company;
-    const canonicalUrl = await this.assertUniqueJobLink(data.profileId ?? app.profileId, data.jobUrl ?? app.jobUrl, id);
+    const submittedUrl = data.jobUrl !== undefined ? data.jobUrl : app.jobUrl;
+    const canonicalUrl = normalizedJobUrl(submittedUrl);
+    const jobUrl = canonicalUrl ? submittedUrl!.trim() : null;
     const updateData: Prisma.ApplicationUpdateInput = {
       ...((data.profileId !== undefined || data.jobUrl !== undefined) ? { normalizedJobUrl: canonicalUrl } : {}),
       ...(data.jobTitle !== undefined ? { jobTitle: data.jobTitle } : {}),
@@ -279,7 +283,7 @@ export class ApplicationsService {
       ...(data.location !== undefined ? { location: data.location } : {}),
       ...(data.workArrangement !== undefined ? { workArrangement: data.workArrangement } : {}),
       ...(data.source !== undefined ? { source: data.source } : {}),
-      ...(data.jobUrl !== undefined ? { jobUrl: data.jobUrl || null } : {}),
+      ...(data.jobUrl !== undefined ? { jobUrl } : {}),
       ...(data.jobDescription !== undefined ? { jobDescription: data.jobDescription } : {}),
       ...(data.profileId !== undefined ? { profile: { connect: { id: data.profileId } } } : {}),
     };
@@ -288,7 +292,7 @@ export class ApplicationsService {
       throw new BadRequestException('No fields to update');
     }
 
-    const warningFields = ['profileId', 'jobTitle', 'company', 'location', 'workArrangement', 'jobDescription'] as const;
+    const warningFields = ['profileId', 'jobTitle', 'company', 'location', 'workArrangement', 'jobDescription', 'jobUrl'] as const;
     if (warningFields.some((key) => data[key] !== undefined && data[key] !== app[key])) {
       const validation = await this.rulesService.validateApplication({
         profileId: data.profileId ?? app.profileId,
@@ -298,6 +302,7 @@ export class ApplicationsService {
         workArrangement: data.workArrangement ?? app.workArrangement,
         jobDescription: data.jobDescription ?? app.jobDescription,
         excludeApplicationId: id,
+        jobUrl: jobUrl ?? undefined,
       });
       updateData.warnings = { deleteMany: {}, create: validation.warnings };
     }
@@ -320,19 +325,6 @@ export class ApplicationsService {
     await this.storage.deleteResumeTree(id);
     await this.prisma.application.delete({ where: { id } });
     return { ok: true };
-  }
-
-  private async assertUniqueJobLink(profileId: string, value: unknown, excludeId?: string) {
-    const canonical = normalizedJobUrl(value);
-    if (!canonical) return null;
-    const existing = await this.prisma.application.findMany({
-      where: { profileId, jobUrl: { not: null }, ...(excludeId ? { id: { not: excludeId } } : {}) },
-      select: { jobUrl: true },
-    });
-    if (existing.some(app => {
-      try { return normalizedJobUrl(app.jobUrl) === canonical; } catch { return false; }
-    })) throw new ConflictException('This profile already has an application for this job link. Open the existing application instead.');
-    return canonical;
   }
 
   async updateStatus(id: string, status: ApplicationStatus, user: AuthUser, note?: string) {

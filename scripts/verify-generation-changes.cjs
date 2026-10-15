@@ -5,7 +5,7 @@ const { createRequire } = require('node:module');
 const root = path.resolve(__dirname, '..');
 const output = path.join(root, 'tmp');
 fs.mkdirSync(output, { recursive: true });
-const log = path.join(output, 'generation-checks.log');
+const log = path.join(output, process.argv.includes('--tests-only') ? 'document-edit-unit-tests.log' : 'generation-checks.log');
 fs.writeFileSync(log, '');
 function run(name, args, cwd = root) {
   console.log(`${name}…`);
@@ -19,6 +19,11 @@ if (process.argv.includes('--migrate-only')) {
   const load = createRequire(path.join(root, 'apps/api/package.json'));
   const prisma = path.join(path.dirname(load.resolve('prisma/package.json')), 'build/index.js');
   run('Database migration', [prisma, 'migrate', 'deploy'], path.join(root, 'apps/api'));
+  process.exit(0);
+}
+if (process.argv.includes('--tests-only')) {
+  const tests = fs.readdirSync(path.join(root, 'apps/api/test')).filter(name => name.endsWith('.test.cjs')).map(name => `apps/api/test/${name}`);
+  run('Unit regression tests', ['--test', '--test-concurrency=2', ...tests]);
   process.exit(0);
 }
 if (process.argv.includes('--web-only')) {

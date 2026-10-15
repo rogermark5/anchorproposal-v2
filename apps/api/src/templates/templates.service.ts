@@ -466,7 +466,7 @@ export class TemplatesService {
     const contactFont = cfg.typography.contactSize ?? Math.max(8, fontSize - 1.5);
     const subtextFont = cfg.typography.subtextSize ?? Math.max(8, fontSize - 1);
     const contact = c.contact || { name: 'Candidate' };
-    const headline = resumeHeadline(c.experiences, contact.title) || '';
+    const headline = contactCfg.showJobTitle !== false ? resumeHeadline(c.experiences, contact.title) || '' : '';
     const separator = contactSeparator || '·';
     const contactParts = [
       contactCfg.showLocation !== false ? contact.address : '',

@@ -119,6 +119,11 @@ export class SettingsController {
     return this.settingsService.updateMyPromptSettings(req.user, body);
   }
 
+  @Patch('document-display')
+  updateDocumentDisplay(@Body() body: { showJobTitle: boolean }, @Req() req: { user: AuthUser }) {
+    return this.settingsService.updateDocumentDisplay(req.user, body);
+  }
+
   @Get('ai')
   @Roles(UserRole.MASTER)
   getAiSettings() {

@@ -25,6 +25,8 @@ import { parseExperienceTitleMode, type ExperienceTitleMode } from './experience
 import { COVER_LETTER_UNAVAILABLE, usableCoverLetter } from '../deepseek/cover-letter';
 import { documentDownloadFilename } from '../documents/download-filename';
 import { bindProfileOutput, hasProfileIdentityConflict, redactPromptMetadata } from './profile-output';
+import { applyDocumentDisplay, defaultDocumentDisplay } from './document-display';
+import { documentEditsSchema, editedDocument } from './document-edits';
 
 export type ManualGenerationInput = {
   responseJson: string;
@@ -434,6 +436,16 @@ export class GenerationsService {
     }
     if (generation.requiresRegeneration) throw new BadRequestException('This old resume contains conflicting profile information. Generate a new version before previewing, downloading or sharing it.');
     const output = generation.structuredOutputJson as GenerationOutput;
+    const canEdit = generation.creatorId === user.id && canBid(user.role) && Boolean((await this.prisma.user.findUnique({ where: { id: user.id } }))?.canGenerateResumes);
+    return this.documentPreview(generation, output, await this.documentConfig(generation), canEdit);
+  }
+
+  private async documentConfig(generation: { creatorId?: string; templateConfigSnapshotJson?: unknown; templateVersion?: { configJson: unknown } | null }) {
+    const display = generation.creatorId ? await this.settingsService.getDocumentDisplay(generation.creatorId) : defaultDocumentDisplay;
+    return applyDocumentDisplay((generation.templateConfigSnapshotJson || generation.templateVersion?.configJson || {}) as object, display);
+  }
+
+  private documentPreview(generation: { id: string; version: number; completedAt?: Date | null; createdAt?: Date; application: { company: string; jobTitle: string } }, output: GenerationOutput, config: object, canEdit: boolean) {
     const html = this.templatesService.renderPreviewHtml(
       {
         contact: output.contact,
@@ -443,16 +455,63 @@ export class GenerationsService {
         educations: output.educations,
         certificates: output.certificates,
       },
-      (generation.templateConfigSnapshotJson || generation.templateVersion?.configJson || {}) as object,
+      config,
     );
     const box = this.templatesService.pdfLayout(
-      (generation.templateConfigSnapshotJson || generation.templateVersion?.configJson || {}) as object,
+      config,
     );
     const coverLetter = usableCoverLetter(output.coverLetter, output.contact.name);
-    return { html, pageSize: box.pageSize, coverLetterHtml: coverLetter ? renderCoverLetterHtml({ ...coverLetter,
+    return { html, pageSize: box.pageSize, content: output, canEdit, generationId: generation.id, version: generation.version, coverLetterHtml: coverLetter ? renderCoverLetterHtml({ ...coverLetter,
       contact: output.contact, company: generation.application.company, jobTitle: generation.application.jobTitle,
       date: (generation.completedAt || generation.createdAt)?.toISOString(),
-    }, (generation.templateConfigSnapshotJson || generation.templateVersion?.configJson || {}) as object) : null };
+    }, config) : null };
+  }
+
+  private async editableGeneration(id: string, user: AuthUser) {
+    const generation = await this.prisma.resumeGeneration.findUnique({ where: { id }, include: { application: true, templateVersion: true, files: true } });
+    if (!generation) throw new NotFoundException('Generation not found');
+    await this.assertAppAccess(generation.application, user);
+    if (generation.creatorId !== user.id || !canBid(user.role)) throw new ForbiddenException('Only the creator can edit this document.');
+    const owner = await this.prisma.user.findUnique({ where: { id: user.id } });
+    if (!owner?.canGenerateResumes) throw new ForbiddenException('You do not have permission to edit resume documents.');
+    if (generation.status !== GenerationStatus.COMPLETED || !generation.structuredOutputJson) throw new BadRequestException('The document is not ready to edit.');
+    if (this.safeGeneration(generation).requiresRegeneration) throw new BadRequestException('Regenerate this old document using the saved profile before editing.');
+    return generation;
+  }
+
+  private applyEdits(generation: { structuredOutputJson: unknown; profileSnapshotJson: unknown; isUserEdited?: boolean }, input: unknown) {
+    try { return editedDocument(bindProfileOutput(generation.structuredOutputJson as GenerationOutput, generation.profileSnapshotJson, generation.isUserEdited), generation.profileSnapshotJson, input); }
+    catch (error) { throw new BadRequestException((error as { issues?: { message: string }[] }).issues?.[0]?.message || (error as Error).message); }
+  }
+
+  async previewEdits(id: string, user: AuthUser, input: unknown) {
+    const source = await this.editableGeneration(id, user);
+    return this.documentPreview(source, this.applyEdits(source, input), await this.documentConfig(source), true);
+  }
+
+  async saveEdits(id: string, user: AuthUser, input: unknown) {
+    const source = await this.editableGeneration(id, user);
+    const output = this.applyEdits(source, input);
+    const data = documentEditsSchema.parse(input);
+    if (!data.idempotencyKey) throw new BadRequestException('A save request key is required. Try saving again.');
+    const requestKey = `edit:${id}:${data.idempotencyKey}`;
+    const config = await this.documentConfig(source);
+    const generation = await this.prisma.$transaction(async tx => {
+      await tx.$queryRaw`SELECT id FROM applications WHERE id = ${source.applicationId} FOR UPDATE`;
+      const existing = await tx.resumeGeneration.findUnique({ where: { idempotencyKey: requestKey } });
+      if (existing) return existing;
+      const latest = await tx.resumeGeneration.findFirst({ where: { applicationId: source.applicationId }, orderBy: { version: 'desc' } });
+      const created = await tx.resumeGeneration.create({ data: {
+        applicationId: source.applicationId, creatorId: user.id, status: GenerationStatus.COMPLETED, version: (latest?.version || 0) + 1,
+        promptVersionId: source.promptVersionId, promptSnapshot: source.promptSnapshot, coverLetterPromptSnapshot: source.coverLetterPromptSnapshot,
+        templateVersionId: source.templateVersionId, templateConfigSnapshotJson: config as Prisma.InputJsonObject,
+        profileSnapshotJson: source.profileSnapshotJson as Prisma.InputJsonObject, structuredOutputJson: JSON.parse(JSON.stringify(output)),
+        isUserEdited: true, experienceTitleMode: source.experienceTitleMode, idempotencyKey: requestKey, completedAt: new Date(), tokenUsage: 0, costEstimate: 0,
+      } });
+      await tx.auditEvent.create({ data: { actorId: user.id, action: 'RESUME_DOCUMENT_EDITED', targetType: 'ResumeGeneration', targetId: created.id, changesJson: { sourceGenerationId: id } } });
+      return created;
+    });
+    return { generation: this.safeGeneration(generation), preview: await this.previewHtml(generation.id, user) };
   }
 
   async findOne(id: string, user: AuthUser) {
@@ -465,10 +524,10 @@ export class GenerationsService {
     return this.safeGeneration(gen);
   }
 
-  private safeGeneration<T extends { structuredOutputJson: unknown; profileSnapshotJson: unknown }>(generation: T) {
+  private safeGeneration<T extends { structuredOutputJson: unknown; profileSnapshotJson: unknown; isUserEdited?: boolean }>(generation: T) {
     if (!generation.structuredOutputJson) return { ...redactPromptMetadata(generation), requiresRegeneration: false };
     const output = generation.structuredOutputJson as GenerationOutput;
-    const safe = bindProfileOutput(output, generation.profileSnapshotJson);
+    const safe = bindProfileOutput(output, generation.profileSnapshotJson, generation.isUserEdited);
     const requiresRegeneration = hasProfileIdentityConflict(output, generation.profileSnapshotJson);
     return { ...redactPromptMetadata(generation), structuredOutputJson: safe, requiresRegeneration };
   }
@@ -506,14 +565,14 @@ export class GenerationsService {
     }
 
     const existing = generation.files.find((file) => file.kind === kind && file.type === type);
-    const output = bindProfileOutput(generation.structuredOutputJson as GenerationOutput, generation.profileSnapshotJson);
+    const output = bindProfileOutput(generation.structuredOutputJson as GenerationOutput, generation.profileSnapshotJson, generation.isUserEdited);
     if (this.safeGeneration(generation).requiresRegeneration) throw new BadRequestException('This old resume contains conflicting profile information. Generate a new version before downloading it.');
     const profile = generation.profileSnapshotJson as { firstName?: string; lastName?: string };
     const baseFilename =
       `${profile.firstName || ''}_${profile.lastName || ''}_${generation.application.company}_${generation.application.jobTitle}`
         .replace(/[^a-zA-Z0-9_-]/g, '_')
         .substring(0, 100) + `_v${generation.version}`;
-    const templateConfig = (generation.templateConfigSnapshotJson || generation.templateVersion?.configJson || {}) as object;
+    const templateConfig = await this.documentConfig(generation);
     const candidateName =
       `${profile.firstName || ''} ${profile.lastName || ''}`.trim() || output.contact?.name || 'Applicant';
     const coverLetter = usableCoverLetter(output.coverLetter, candidateName);
@@ -611,9 +670,9 @@ export class GenerationsService {
     try { payload = decryptResumeLink(token, this.shareSecret()); } catch { throw new NotFoundException('Resume link is invalid or expired'); }
     const generation = await this.prisma.resumeGeneration.findUnique({ where: { id: payload.id }, include: { templateVersion: true } });
     if (!generation || generation.publicShareNonce !== payload.nonce || generation.status !== GenerationStatus.COMPLETED || !generation.structuredOutputJson) throw new NotFoundException('Resume link is no longer available');
-    const output = bindProfileOutput(generation.structuredOutputJson as GenerationOutput, generation.profileSnapshotJson);
+    const output = bindProfileOutput(generation.structuredOutputJson as GenerationOutput, generation.profileSnapshotJson, generation.isUserEdited);
     if (this.safeGeneration(generation).requiresRegeneration) throw new NotFoundException('Resume link is no longer available');
-    const config = (generation.templateConfigSnapshotJson || generation.templateVersion?.configJson || {}) as object;
+    const config = await this.documentConfig(generation);
     return { html: this.templatesService.renderPreviewHtml(output, config), pageSize: this.templatesService.pdfLayout(config).pageSize };
   }
 

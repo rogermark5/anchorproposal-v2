@@ -5,7 +5,7 @@ import { Anchor, Minus, Square, X, ArrowUpRight, LoaderCircle } from 'lucide-rea
 import { Auth, Preferences } from './auth-forms';
 import { DesktopAuthContext } from './auth-context';
 import { NavigationProvider } from './navigation';
-import type { User } from '../../web/src/lib/api';
+import { api, type User } from '../../web/src/lib/api';
 import './desktop.css';
 const Workspace = lazy(() => import('./workspace'));
 const QuickApplication = lazy(() => import('./quick-application'));
@@ -29,6 +29,7 @@ function App() {
       if (state.authenticated) void restore();
     }).catch(e => { setReady(true); setError(e.message); });
     const off = window.anchor.onEvent(event => {
+      if (event.type === 'session' || event.type === 'data-changed') api.invalidateCache();
       if (event.type === 'session') { if (event.signedIn) void restore(); else setUser(null); }
       if (event.type === 'settings') setSettings(event.settings);
       if (event.type === 'navigate') location.hash = event.path;
