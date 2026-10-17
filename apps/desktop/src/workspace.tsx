@@ -20,7 +20,7 @@ const JobPool = lazy(() => import('../../web/src/app/(dashboard)/job-pool/page')
 const Downloads = lazy(() => import('../../web/src/components/desktop-download').then(m => ({ default: m.DesktopDownload })));
 const nav = [
   ['/dashboard', 'Overview', LayoutDashboard, 'all'], ['/applications', 'Applications', FileText, 'bid'],
-  ['/profiles', 'Profiles', Users, 'all'], ['/job-pool', 'Job pool', Briefcase, 'bid'],
+  ['/profiles', 'Profiles', Users, 'all'], ['/job-pool', 'Job pool', Briefcase, 'all'],
   ['/templates', 'Templates', Palette, 'all'], ['/users', 'Team & permissions', UserCog, 'staff'],
   ['/settings', 'Platform settings', Settings, 'all'], ['/download', 'App versions', MonitorDown, 'all'],
 ] as const;

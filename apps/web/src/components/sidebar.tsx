@@ -22,7 +22,7 @@ const navItems = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/applications', label: 'Applications', icon: FileText, bidOnly: true },
   { href: '/profiles', label: 'Profiles', icon: Users },
-  { href: '/job-pool', label: 'Job Pool', icon: Briefcase, bidOnly: true },
+  { href: '/job-pool', label: 'Job Pool', icon: Briefcase },
   { href: '/templates', label: 'Templates', icon: Palette },
   { href: '/users', label: 'Users', icon: UserCog, staffOnly: true },
   { href: '/settings', label: 'Settings', icon: Settings },

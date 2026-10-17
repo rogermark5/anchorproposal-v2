@@ -42,6 +42,9 @@ export function bindProfileOutput(output: GenerationOutput, snapshot: unknown, u
       links: links.map((link: any) => ({ type: plainText(link.type || link.label), url: plainText(link.url) })).filter((link: any) => /^https?:\/\//i.test(link.url)),
     },
     skills: output.skills || [],
+    projects:userEdited?output.projects:undefined,
+    headline:userEdited?output.headline:undefined,
+    coreExpertise:userEdited?output.coreExpertise:undefined,
     // A model may improve section wording, but cannot add another person's qualifications.
     educations: userEdited ? output.educations : Array.isArray(profile.education || profile.educations) ? (profile.education || profile.educations).map((row: any, index: number) => ({
       ...(output.educations?.[index] || {}), ...row,

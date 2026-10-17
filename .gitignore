@@ -22,6 +22,7 @@ config.bat
 /tmp/qa-security/
 /tmp/inspect-config.cjs
 /tmp/functional-qa/
+/tmp/job-pool-qa/
 
 # Local credentials
 .env

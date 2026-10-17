@@ -1,0 +1,316 @@
+{
+  "verifiedAt": "2026-10-17T05:57:16.179Z",
+  "criteria": "remote-us-software",
+  "attribution": {
+    "url": "https://github.com/elliottdehn/open-jobs",
+    "license": "CC0-1.0",
+    "note": "Board identifiers only. Postings independently verified against the live public employer API."
+  },
+  "sources": [
+    {
+      "provider": "smartrecruiters",
+      "boardToken": "AECOM2",
+      "name": "AECOM"
+    },
+    {
+      "provider": "smartrecruiters",
+      "boardToken": "algobraininc",
+      "name": "AlgoBrain Inc"
+    },
+    {
+      "provider": "smartrecruiters",
+      "boardToken": "AllegisGlobalSolutions",
+      "name": "Allegis Global Solutions"
+    },
+    {
+      "provider": "smartrecruiters",
+      "boardToken": "AristaNetworks",
+      "name": "Arista Networks"
+    },
+    {
+      "provider": "smartrecruiters",
+      "boardToken": "Blend360",
+      "name": "Blend360"
+    },
+    {
+      "provider": "smartrecruiters",
+      "boardToken": "cacheflow",
+      "name": "Cacheflow"
+    },
+    {
+      "provider": "smartrecruiters",
+      "boardToken": "CONFISAINTERNATIONALGROUP",
+      "name": "CONFISA INTERNATIONAL GROUP"
+    },
+    {
+      "provider": "smartrecruiters",
+      "boardToken": "corizona",
+      "name": "Corizona"
+    },
+    {
+      "provider": "smartrecruiters",
+      "boardToken": "DerexTechnologiesInc",
+      "name": "Derex Technologies Inc"
+    },
+    {
+      "provider": "smartrecruiters",
+      "boardToken": "EACProductDevelopmentSolutions",
+      "name": "EAC Product Development Solutions"
+    },
+    {
+      "provider": "smartrecruiters",
+      "boardToken": "Enthuse-Marketing",
+      "name": "Enthuse-Marketing"
+    },
+    {
+      "provider": "smartrecruiters",
+      "boardToken": "epochgames",
+      "name": "Epoch Games"
+    },
+    {
+      "provider": "smartrecruiters",
+      "boardToken": "EVERSANA1",
+      "name": "EVERSANA"
+    },
+    {
+      "provider": "smartrecruiters",
+      "boardToken": "EvolutionIQ",
+      "name": "EvolutionIQ"
+    },
+    {
+      "provider": "smartrecruiters",
+      "boardToken": "federatotechnologies",
+      "name": "Federato Technologies"
+    },
+    {
+      "provider": "smartrecruiters",
+      "boardToken": "FusionConsulting",
+      "name": "Fusion Consulting"
+    },
+    {
+      "provider": "smartrecruiters",
+      "boardToken": "HarvardUniversity",
+      "name": "Harvard University"
+    },
+    {
+      "provider": "smartrecruiters",
+      "boardToken": "InbulksCorp",
+      "name": "Inbulks Corp"
+    },
+    {
+      "provider": "smartrecruiters",
+      "boardToken": "INFICON2",
+      "name": "INFICON"
+    },
+    {
+      "provider": "smartrecruiters",
+      "boardToken": "integrateddermatology",
+      "name": "Integrated Dermatology"
+    },
+    {
+      "provider": "smartrecruiters",
+      "boardToken": "IntegriChain1",
+      "name": "IntegriChain"
+    },
+    {
+      "provider": "smartrecruiters",
+      "boardToken": "jobmobz1",
+      "name": "Job Mobz"
+    },
+    {
+      "provider": "smartrecruiters",
+      "boardToken": "JobsForHumanity",
+      "name": "Jobs for Humanity"
+    },
+    {
+      "provider": "smartrecruiters",
+      "boardToken": "JohnSnowLabs",
+      "name": "John Snow Labs"
+    },
+    {
+      "provider": "smartrecruiters",
+      "boardToken": "KeypathEducation",
+      "name": "Keypath Education"
+    },
+    {
+      "provider": "smartrecruiters",
+      "boardToken": "Konecranes",
+      "name": "Konecranes"
+    },
+    {
+      "provider": "smartrecruiters",
+      "boardToken": "LinkedIn3",
+      "name": "LinkedIn"
+    },
+    {
+      "provider": "smartrecruiters",
+      "boardToken": "Logic2020Inc",
+      "name": "Logic20/20 Inc."
+    },
+    {
+      "provider": "smartrecruiters",
+      "boardToken": "M3USA",
+      "name": "M3USA"
+    },
+    {
+      "provider": "smartrecruiters",
+      "boardToken": "Mirantis",
+      "name": "Mirantis"
+    },
+    {
+      "provider": "smartrecruiters",
+      "boardToken": "Miratech1",
+      "name": "Miratech"
+    },
+    {
+      "provider": "smartrecruiters",
+      "boardToken": "MonetizeNow",
+      "name": "MonetizeNow"
+    },
+    {
+      "provider": "smartrecruiters",
+      "boardToken": "MyTime",
+      "name": "MyTime"
+    },
+    {
+      "provider": "smartrecruiters",
+      "boardToken": "Nagarro1",
+      "name": "Nagarro"
+    },
+    {
+      "provider": "smartrecruiters",
+      "boardToken": "NBCUniversal3",
+      "name": "NBCUniversal"
+    },
+    {
+      "provider": "smartrecruiters",
+      "boardToken": "Nearmap",
+      "name": "Nearmap"
+    },
+    {
+      "provider": "smartrecruiters",
+      "boardToken": "nityoinfotech1",
+      "name": "Nityo Infotech"
+    },
+    {
+      "provider": "smartrecruiters",
+      "boardToken": "NOCD",
+      "name": "NOCD"
+    },
+    {
+      "provider": "smartrecruiters",
+      "boardToken": "OtterLLC",
+      "name": "Otter, LLC"
+    },
+    {
+      "provider": "smartrecruiters",
+      "boardToken": "Perficient2",
+      "name": "Perficient"
+    },
+    {
+      "provider": "smartrecruiters",
+      "boardToken": "PhillyTechCo",
+      "name": "PhillyTech.Co"
+    },
+    {
+      "provider": "smartrecruiters",
+      "boardToken": "ProcessProConsulting",
+      "name": "Process Pro Consulting"
+    },
+    {
+      "provider": "smartrecruiters",
+      "boardToken": "prosidianconsulting",
+      "name": "ProSidian Consulting, LLC"
+    },
+    {
+      "provider": "smartrecruiters",
+      "boardToken": "PSICRO",
+      "name": "PSI CRO"
+    },
+    {
+      "provider": "smartrecruiters",
+      "boardToken": "RESPECInc",
+      "name": "RE/SPEC Inc."
+    },
+    {
+      "provider": "smartrecruiters",
+      "boardToken": "SimplifiedITSolutions1",
+      "name": "Simplified IT Solutions"
+    },
+    {
+      "provider": "smartrecruiters",
+      "boardToken": "Snarkify",
+      "name": "Snarkify"
+    },
+    {
+      "provider": "smartrecruiters",
+      "boardToken": "SoftwareMind",
+      "name": "Software Mind"
+    },
+    {
+      "provider": "smartrecruiters",
+      "boardToken": "Solidigm",
+      "name": "Solidigm"
+    },
+    {
+      "provider": "smartrecruiters",
+      "boardToken": "SOSi1",
+      "name": "SOSi"
+    },
+    {
+      "provider": "smartrecruiters",
+      "boardToken": "syncreonconsulting",
+      "name": "Syncreon Consulting"
+    },
+    {
+      "provider": "smartrecruiters",
+      "boardToken": "talentanywhere1",
+      "name": "Talent Anywhere"
+    },
+    {
+      "provider": "smartrecruiters",
+      "boardToken": "TechnologyNavigators",
+      "name": "Technology Navigators"
+    },
+    {
+      "provider": "smartrecruiters",
+      "boardToken": "TenMileSquareTechnologies",
+      "name": "Ten Mile Square Technologies"
+    },
+    {
+      "provider": "smartrecruiters",
+      "boardToken": "VeoliaEnvironnementSA",
+      "name": "Veolia Environnement SA"
+    },
+    {
+      "provider": "smartrecruiters",
+      "boardToken": "vericast",
+      "name": "Vericast"
+    },
+    {
+      "provider": "smartrecruiters",
+      "boardToken": "Versant3",
+      "name": "Versant"
+    },
+    {
+      "provider": "smartrecruiters",
+      "boardToken": "VuoriInc",
+      "name": "Vuori, Inc"
+    },
+    {
+      "provider": "smartrecruiters",
+      "boardToken": "Wix2",
+      "name": "Wix"
+    },
+    {
+      "provider": "smartrecruiters",
+      "boardToken": "Workhint",
+      "name": "Workhint"
+    },
+    {
+      "provider": "smartrecruiters",
+      "boardToken": "ZILLIONTECHNOLOGIESINC",
+      "name": "ZILLION TECHNOLOGIES, INC"
+    }
+  ]
+}

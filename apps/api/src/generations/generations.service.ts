@@ -454,6 +454,7 @@ export class GenerationsService {
         experiences: output.experiences,
         educations: output.educations,
         certificates: output.certificates,
+        projects:output.projects,headline:output.headline,coreExpertise:output.coreExpertise,
       },
       config,
     );
@@ -504,7 +505,7 @@ export class GenerationsService {
       const created = await tx.resumeGeneration.create({ data: {
         applicationId: source.applicationId, creatorId: user.id, status: GenerationStatus.COMPLETED, version: (latest?.version || 0) + 1,
         promptVersionId: source.promptVersionId, promptSnapshot: source.promptSnapshot, coverLetterPromptSnapshot: source.coverLetterPromptSnapshot,
-        templateVersionId: source.templateVersionId, templateConfigSnapshotJson: config as Prisma.InputJsonObject,
+        templateVersionId: source.templateVersionId, templateConfigSnapshotJson: (source.templateConfigSnapshotJson || source.templateVersion?.configJson || {}) as Prisma.InputJsonObject,
         profileSnapshotJson: source.profileSnapshotJson as Prisma.InputJsonObject, structuredOutputJson: JSON.parse(JSON.stringify(output)),
         isUserEdited: true, experienceTitleMode: source.experienceTitleMode, idempotencyKey: requestKey, completedAt: new Date(), tokenUsage: 0, costEstimate: 0,
       } });
@@ -590,6 +591,7 @@ export class GenerationsService {
               experiences: output.experiences,
               educations: output.educations,
               certificates: output.certificates,
+              projects:output.projects,headline:output.headline,coreExpertise:output.coreExpertise,
             },
             templateConfig,
             baseFilename,

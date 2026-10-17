@@ -43,6 +43,7 @@ export function GenerationPreviewDialog({ applicationId, initialGenerationId, on
   const selected = generations.find(gen => gen.id === selectedId);
   const cover = !selected?.requiresRegeneration ? selected?.structuredOutputJson?.coverLetter : undefined;
   const cleanEdits = () => draft ? { ...draft, experiences: draft.experiences.map(row => ({ ...row, bullets: row.bullets.map(line => line.replace(/^\s*[•*-]\s+/, '').trim()).filter(Boolean) })),
+    projects:draft.projects?.map(row=>({...row,bullets:row.bullets.map(line=>line.replace(/^\s*[•*-]\s+/,'').trim()).filter(Boolean)})),coreExpertise:draft.coreExpertise?.map(value=>value.trim()).filter(Boolean),
     ...(draft.coverLetter ? { coverLetter: { ...draft.coverLetter, paragraphs: draft.coverLetter.paragraphs.map(text => text.trim()).filter(Boolean) } } : {}) } : null;
   const editAction = async (save: boolean) => {
     const data = cleanEdits();

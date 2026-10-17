@@ -1,3 +1,4 @@
+import { resumeDocx } from './resume-docx';
 import { homedir } from 'os';
 import { join } from 'path';
 import { Injectable } from '@nestjs/common';
@@ -41,6 +42,7 @@ export class DocumentRendererService {
 
   async renderPdf(html: string, templateConfig: object = {}, existingBrowser?: puppeteer.Browser): Promise<Buffer> {
     const box = this.templatesService.pdfLayout(templateConfig);
+    const fullPageArt=html.includes('data-resume-design="full-page"');
     const browser = existingBrowser || await puppeteer.launch({
       headless: true,
       timeout: 60_000,
@@ -59,10 +61,10 @@ export class DocumentRendererService {
         timeout: 60_000,
         preferCSSPageSize: false,
         margin: {
-          top: `${box.marginTop}px`,
-          right: `${box.marginRight}px`,
-          bottom: `${box.marginBottom}px`,
-          left: `${box.marginLeft}px`,
+          top: `${fullPageArt?0:box.marginTop}px`,
+          right: `${fullPageArt?0:box.marginRight}px`,
+          bottom: `${fullPageArt?0:box.marginBottom}px`,
+          left: `${fullPageArt?0:box.marginLeft}px`,
         },
       });
       return Buffer.from(pdf);
@@ -73,233 +75,7 @@ export class DocumentRendererService {
   }
 
   async renderDocx(content: PromptResumeContent, templateConfig: object = {}): Promise<Buffer> {
-    const cfg = templateConfigSchema.parse(templateConfig) as {
-      colors?: { primary?: string; heading?: string; body?: string; muted?: string; divider?: string; sectionLabelBg?: string; sectionLabelText?: string };
-      typography?: {
-        bodyFont?: string;
-        headingFont?: string;
-        baseFontSize?: number;
-        nameSize?: number;
-        headingSize?: number;
-        contactSize?: number;
-        nameUppercase?: boolean;
-        headingUppercase?: boolean;
-      };
-      contact?: {
-        showJobTitle?: boolean;
-        layout?: string;
-        showEmail?: boolean;
-        showPhone?: boolean;
-        showLocation?: boolean;
-        showLinkedin?: boolean;
-      };
-      layout?: { sectionSpacing?: number; contactSeparator?: string };
-      styles?: { sectionHeadingStyle?: string; showDividers?: boolean; experienceTitleWeight?: string; locationItalic?: boolean; showCertIssuer?: boolean; showCertDate?: boolean; listStyle?: string };
-      sections?: { order?: string[]; visibility?: Record<string, boolean> };
-    };
-    const box = this.templatesService.pdfLayout(templateConfig);
-    const hex = (value: string | undefined, fallback: string) =>
-      (value || fallback).replace('#', '');
-    const primary = hex(cfg.colors?.primary, '1e3a5f');
-    const heading = hex(cfg.colors?.heading, '1e293b');
-    const body = hex(cfg.colors?.body, '334155');
-    const muted = hex(cfg.colors?.muted, '64748b');
-    const font = cfg.typography?.bodyFont || 'Georgia';
-    const headingFont = cfg.typography?.headingFont || font;
-    const bodySize = Math.round((cfg.typography?.baseFontSize || 11) * 2);
-    const nameSize = Math.round((cfg.typography?.nameSize || 20) * 2);
-    const headingSize = Math.round((cfg.typography?.headingSize || 12) * 2);
-    const contactSize = Math.round((cfg.typography?.contactSize || 9) * 2);
-    const headingUpper = cfg.typography?.headingUppercase !== false;
-    const align =
-      (templateConfig as { layout?: { headerAlignment?: string } }).layout?.headerAlignment === 'center'
-        ? AlignmentType.CENTER
-        : AlignmentType.LEFT;
-    const contact = { ...content.contact, title: resumeHeadline(content.experiences, content.contact?.title) };
-    const visibility = cfg.sections?.visibility || {};
-    const order = cfg.sections?.order?.length
-      ? cfg.sections.order
-      : ['summary', 'skills', 'experience', 'education', 'certifications'];
-
-    const headingPara = (text: string) =>
-      new Paragraph({
-        keepNext: true,
-        spacing: { before: Math.round((cfg.layout?.sectionSpacing ?? 16) * 15), after: 80 },
-        ...(cfg.styles?.sectionHeadingStyle === 'background'
-          ? { shading: { fill: hex(cfg.colors?.sectionLabelBg, 'f1f5f9') } } : {}),
-        children: [
-          new TextRun({
-            text: headingUpper ? text.toUpperCase() : text,
-            bold: true,
-            font: headingFont,
-            size: headingSize,
-            color: cfg.styles?.sectionHeadingStyle === 'background' ? hex(cfg.colors?.sectionLabelText, '1e293b') : heading,
-          }),
-        ],
-      });
-
-    const children: Paragraph[] = [
-      new Paragraph({
-        alignment: align,
-        children: [
-          new TextRun({
-            text: cfg.typography?.nameUppercase ? (contact.name || '').toUpperCase() : contact.name || 'Candidate',
-            bold: true,
-            font: headingFont,
-            size: nameSize,
-            color: primary,
-          }),
-        ],
-      }),
-    ];
-    if (contact.title && cfg.contact?.showJobTitle !== false) {
-      children.push(
-        new Paragraph({
-          alignment: align,
-          children: [
-            new TextRun({ text: contact.title, bold: true, font, size: bodySize, color: heading }),
-          ],
-        }),
-      );
-    }
-    const contactLine = [
-      cfg.contact?.showLocation !== false ? contact.address : '',
-      cfg.contact?.showEmail !== false ? contact.email : '',
-      cfg.contact?.showPhone !== false ? contact.phone : '',
-      cfg.contact?.showLinkedin !== false ? contact.linkedin : '',
-      ...(contact.links || []).filter(link => link.url !== contact.linkedin).map(link => link.url),
-    ]
-      .filter(Boolean)
-      .join(` ${cfg.layout?.contactSeparator || '·'} `);
-    if (contactLine) {
-      const contactParts = contactLine.split(` ${cfg.layout?.contactSeparator || '·'} `);
-      children.push(
-        new Paragraph({
-          alignment: align,
-          spacing: { after: 160 },
-          children: cfg.contact?.layout === 'stacked'
-            ? contactParts.map((text, index) => new TextRun({ text, break: index ? 1 : undefined, font, size: contactSize, color: muted }))
-            : [new TextRun({ text: contactLine, font, size: contactSize, color: muted })],
-        }),
-      );
-    }
-
-    const blocks: Record<string, Paragraph[]> = {
-      summary:
-        content.summary && visibility.summary !== false
-          ? [headingPara('Professional Summary'), new Paragraph({ children: [new TextRun({ text: content.summary, font, size: bodySize, color: body })] })]
-          : [],
-      skills:
-        skillRows(content.skills || []).length && visibility.skills !== false
-          ? [
-              headingPara('Technical Skills'),
-              ...skillRows(content.skills || []).map(
-                (group) =>
-                  new Paragraph({
-                    children: [
-                      new TextRun({ text: `${group.category}: `, bold: true, font, size: bodySize, color: heading }),
-                      new TextRun({ text: group.items, font, size: bodySize, color: body }),
-                    ],
-                  }),
-              ),
-            ]
-          : [],
-      experience:
-        content.experiences?.length && visibility.experience !== false
-          ? [
-              headingPara('Professional Experience'),
-              ...content.experiences.flatMap((exp) => [
-                new Paragraph({
-                  keepNext: true,
-                  children: [
-                    new TextRun({
-                      text: `${experienceTitle(exp)} — ${experienceCompany(exp)}`,
-                      bold: cfg.styles?.experienceTitleWeight !== 'normal',
-                      font,
-                      size: bodySize,
-                      color: heading,
-                    }),
-                    new TextRun({
-                      text: `  ${experienceDates(exp)}`,
-                      font,
-                      size: contactSize,
-                      color: muted,
-                    }),
-                  ],
-                }),
-                ...(exp.location || exp.companyLocation ? [new Paragraph({
-                  keepNext: true,
-                  children: [new TextRun({ text: String(exp.location || exp.companyLocation), italics: Boolean(cfg.styles?.locationItalic), font, size: contactSize, color: muted })],
-                })] : []),
-                ...experienceBullets(exp).map(
-                  (bullet) =>
-                    new Paragraph({
-                      keepLines: true,
-                      ...(cfg.styles?.listStyle === 'none' || cfg.styles?.listStyle === 'dash' ? {} : { bullet: { level: 0 } }),
-                      children: [new TextRun({ text: cfg.styles?.listStyle === 'dash' ? `- ${bullet}` : bullet, font, size: bodySize, color: body })],
-                    }),
-                ),
-              ]),
-            ]
-          : [],
-      education:
-        content.educations?.length && visibility.education !== false
-          ? [
-              headingPara('Education'),
-              ...content.educations.flatMap((edu) => {
-                const line = formatEducationLine(edu);
-                return line
-                  ? [new Paragraph({ children: [new TextRun({ text: line, bold: true, font, size: bodySize, color: heading })] })]
-                  : [];
-              }),
-            ]
-          : [],
-      certifications:
-        content.certificates?.length && visibility.certifications !== false
-          ? [
-              headingPara('Certifications'),
-              ...content.certificates.flatMap((cert) => {
-                const record = cert as Record<string, unknown>;
-                const name = String(record.name || record.title || '').trim();
-                const issuer =
-                  cfg.styles?.showCertIssuer !== false
-                    ? String(record.issuer || record.organization || '').trim()
-                    : '';
-                const date =
-                  cfg.styles?.showCertDate !== false
-                    ? String(record.date || record.dates || record.issueDate || '').trim()
-                    : '';
-                const line = [name, issuer].filter(Boolean).join(' — ');
-                const text = [line, date].filter(Boolean).join('  ');
-                if (!text) return [];
-                return [new Paragraph({ children: [new TextRun({ text, font, size: bodySize, color: body })] })];
-              }),
-            ]
-          : [],
-    };
-
-    for (const key of order) children.push(...(blocks[key] || []));
-
-    const pxToTwip = (px: number) => Math.round(px * 15);
-    const doc = new Document({
-      sections: [
-        {
-          properties: {
-            page: {
-              size: box.pageSize === 'A4' ? { width: 11906, height: 16838 } : { width: 12240, height: 15840 },
-              margin: {
-                top: pxToTwip(box.marginTop + 16),
-                bottom: pxToTwip(box.marginBottom + 16),
-                left: pxToTwip(box.marginLeft + 16),
-                right: pxToTwip(box.marginRight + 16),
-              },
-            },
-          },
-          children,
-        },
-      ],
-    });
-    return Packer.toBuffer(doc);
+    return resumeDocx(content, templateConfig);
   }
 
   async renderAll(

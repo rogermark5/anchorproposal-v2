@@ -12,5 +12,6 @@ export function editedDocument(original: GenerationOutput, snapshot: unknown, in
   return bindProfileOutput({ ...original, summary: data.summary, skills: data.skills,
     experiences: original.experiences.map((row, index) => ({ ...row, title: data.experiences[index].title, bullets: data.experiences[index].bullets })),
     educations: data.educations, certificates: data.certificates, coverLetter,
+    projects:data.projects??original.projects,headline:data.headline??original.headline,coreExpertise:data.coreExpertise??original.coreExpertise,
   }, snapshot, true);
 }

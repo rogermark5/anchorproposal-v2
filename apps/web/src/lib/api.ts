@@ -12,11 +12,22 @@ export type GenerationWorkflow = {
   documentDisplay?: { showJobTitle: boolean };
 };
 
-export type ResumeDocument = { contact: { name: string; title?: string; email?: string; phone?: string; address?: string }; summary: string; skills: Record<string, string>[]; experiences: Record<string, unknown>[]; educations: Record<string, unknown>[]; certificates: Record<string, unknown>[]; coverLetter?: { greeting: string; paragraphs: string[]; closing: string; signatureName?: string } };
-export type DocumentEdits = { summary: string; skills: Record<string, string>[]; experiences: { title: string; bullets: string[] }[]; educations: { degree: string; institution: string; dates: string; location?: string }[]; certificates: { name: string; issuer: string; date: string }[]; coverLetter?: { greeting: string; paragraphs: string[]; closing: string }; idempotencyKey?: string };
+export type ResumeProject={name:string;description:string;technologies:string;url:string;dates:string;bullets:string[]};
+export type ResumeDocument = { contact: { name: string; title?: string; email?: string; phone?: string; address?: string }; summary: string; skills: Record<string, string>[]; experiences: Record<string, unknown>[]; educations: Record<string, unknown>[]; certificates: Record<string, unknown>[]; projects?:ResumeProject[];headline?:string;coreExpertise?:string[];coverLetter?: { greeting: string; paragraphs: string[]; closing: string; signatureName?: string } };
+export type DocumentEdits = { summary: string; skills: Record<string, string>[]; experiences: { title: string; bullets: string[] }[]; educations: { degree: string; institution: string; dates: string; location?: string }[]; certificates: { name: string; issuer: string; date: string }[]; projects?:ResumeProject[];headline?:string;coreExpertise?:string[];coverLetter?: { greeting: string; paragraphs: string[]; closing: string }; idempotencyKey?: string };
 export type GenerationDocumentPreview = { html: string; pageSize: string; coverLetterHtml?: string | null; content?: ResumeDocument; canEdit?: boolean; generationId?: string; version?: number };
 
 export type UserRole = 'MASTER' | 'ADMIN' | 'BIDDER';
+
+export type PoolJob = { id: string; title: string; company: string; location: string; description: string; jobUrl: string;
+  sourceId: string | null; sourceName: string; salary: string | null; employmentType: string | null;
+  workArrangement: 'REMOTE' | 'HYBRID' | 'ONSITE' | 'UNKNOWN'; publishedAt: string | null; postedAt: string; expiresAt: string | null; hidden: boolean; applied: boolean; appliedAt: string | null };
+export type PoolSource = { id: string; provider: string; name: string; boardToken: string; enabled: boolean; queued: boolean;
+  running: boolean; configured: boolean; lastAttemptAt?: string | null; lastSyncedAt: string | null; nextSyncAt: string; nextManualSyncAt: string | null; lastError: string | null; lastCount: number };
+export type PoolManagement = { settings: { enabled: boolean; intervalHours: number }; sources: PoolSource[];
+  providers: { id: string; name: string; board: boolean; docs: string; configured: boolean; choices?: string[] }[] };
+export type PoolListing = { asOf?: string; jobs: PoolJob[]; total: number; nextCursor: string | null; sources: { id: string; provider: string; name: string }[] };
+export type PoolUpdates = { total: number; newCount: number; checkedAt: string };
 
 export type DesktopPackageKind = 'setup' | 'portable';
 export type DesktopReleaseFile = { version: string; bytes: number; sha256: string; publishedAt: string; downloadPath?: string };
@@ -879,9 +890,18 @@ class ApiClient {
     return this.request<unknown[]>('/audit');
   }
 
-  getJobPool() {
-    return this.request<{ enabled: boolean; message: string; jobs: unknown[]; total: number }>('/job-pool');
-  }
+  getJobPool(params: Record<string, string> = {}) { return this.request<PoolListing>(`/job-pool?${new URLSearchParams(params)}`); }
+  getPoolUpdates(params: Record<string, string>) { return this.request<PoolUpdates>(`/job-pool/updates?${new URLSearchParams(params)}`); }
+  markPoolJobApplied(id: string, applied: boolean) { return this.request<{ applied: boolean; appliedAt: string | null }>(`/job-pool/jobs/${id}/applied`, { method: 'PATCH', body: JSON.stringify({ applied }) }); }
+  getPoolJob(id: string) { return this.request<PoolJob>(`/job-pool/jobs/${id}`); }
+  getPoolManagement() { return this.request<PoolManagement>('/job-pool/manage'); }
+  updatePoolSettings(data: Partial<PoolManagement['settings']>) { return this.request<PoolManagement['settings']>('/job-pool/manage', { method: 'PATCH', body: JSON.stringify(data) }); }
+  addPoolSource(data: { provider: string; name: string; boardToken: string }) { return this.request('/job-pool/sources', { method: 'POST', body: JSON.stringify(data) }); }
+  updatePoolSource(id: string, enabled: boolean) { return this.request(`/job-pool/sources/${id}`, { method: 'PATCH', body: JSON.stringify({ enabled }) }); }
+  syncPoolSources(sourceIds?: string[]) { return this.request<{ queued: number; message: string }>('/job-pool/sync', { method: 'POST', body: JSON.stringify({ sourceIds }) }); }
+  addPoolJob(data: Record<string, unknown>) { return this.request<PoolJob>('/job-pool', { method: 'POST', body: JSON.stringify(data) }); }
+  hidePoolJob(id: string, hidden: boolean) { return this.request(`/job-pool/jobs/${id}`, { method: 'PATCH', body: JSON.stringify({ hidden }) }); }
+  applyPoolJob(id: string, profileId: string) { return this.request<{ id: string }>(`/job-pool/jobs/${id}/apply`, { method: 'POST', body: JSON.stringify({ profileId }) }); }
 }
 
 export const api = new ApiClient();
