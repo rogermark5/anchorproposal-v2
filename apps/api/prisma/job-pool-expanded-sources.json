@@ -1,0 +1,922 @@
+{
+  "verifiedOn": "2026-10-17",
+  "verification": {
+    "checkedAt": "2026-10-17T00:27:20.811Z",
+    "candidatesChecked": 1694,
+    "criteria": "remote-us-software",
+    "boardsWithMatches": 180,
+    "matchingJobsOnCheckedPages": 479,
+    "note": "Live public API checks. Lever counts cover its first 100 postings; imports paginate the full feed. Counts precede cross-source URL deduplication and expiry checks."
+  },
+  "attribution": {
+    "title": "ATS Company Directory",
+    "author": "LastRound AI",
+    "url": "https://github.com/fyrosofttech/lastroundai-hiring-data/tree/main/ats-directory",
+    "requiredLink": "https://lastroundai.com/blog/salary-transparency-study-2026",
+    "license": "CC-BY-4.0",
+    "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+    "changes": "Selected boards with matching remote US software postings; independently verified public APIs and refreshed Greenhouse board display names."
+  },
+  "sources": [
+    {
+      "provider": "ashby",
+      "boardToken": "1password",
+      "name": "1Password"
+    },
+    {
+      "provider": "ashby",
+      "boardToken": "join9am",
+      "name": "9amHealth"
+    },
+    {
+      "provider": "ashby",
+      "boardToken": "a-place-for-mom",
+      "name": "A Place for Mom"
+    },
+    {
+      "provider": "ashby",
+      "boardToken": "acquisition",
+      "name": "Acquisition.com"
+    },
+    {
+      "provider": "ashby",
+      "boardToken": "airwallex",
+      "name": "Airwallex"
+    },
+    {
+      "provider": "ashby",
+      "boardToken": "allium",
+      "name": "Allium"
+    },
+    {
+      "provider": "ashby",
+      "boardToken": "allocate",
+      "name": "Allocate"
+    },
+    {
+      "provider": "ashby",
+      "boardToken": "apella",
+      "name": "Apella"
+    },
+    {
+      "provider": "ashby",
+      "boardToken": "aptible",
+      "name": "Aptible"
+    },
+    {
+      "provider": "ashby",
+      "boardToken": "assured",
+      "name": "Assured"
+    },
+    {
+      "provider": "ashby",
+      "boardToken": "camunda",
+      "name": "Camunda"
+    },
+    {
+      "provider": "ashby",
+      "boardToken": "check-technologies",
+      "name": "Check Technologies"
+    },
+    {
+      "provider": "ashby",
+      "boardToken": "clarium",
+      "name": "Clarium"
+    },
+    {
+      "provider": "ashby",
+      "boardToken": "code-metal",
+      "name": "Code Metal"
+    },
+    {
+      "provider": "ashby",
+      "boardToken": "dakota",
+      "name": "Dakota"
+    },
+    {
+      "provider": "ashby",
+      "boardToken": "deepgram",
+      "name": "Deepgram"
+    },
+    {
+      "provider": "ashby",
+      "boardToken": "demandbase",
+      "name": "Demandbase"
+    },
+    {
+      "provider": "ashby",
+      "boardToken": "edia",
+      "name": "Edia"
+    },
+    {
+      "provider": "ashby",
+      "boardToken": "eightsleep",
+      "name": "Eight Sleep"
+    },
+    {
+      "provider": "ashby",
+      "boardToken": "elevenlabs",
+      "name": "ElevenLabs"
+    },
+    {
+      "provider": "ashby",
+      "boardToken": "empirical-security",
+      "name": "Empirical Security"
+    },
+    {
+      "provider": "ashby",
+      "boardToken": "etched",
+      "name": "Etched"
+    },
+    {
+      "provider": "ashby",
+      "boardToken": "flaglerhealth",
+      "name": "Flagler Health"
+    },
+    {
+      "provider": "ashby",
+      "boardToken": "flox",
+      "name": "Flox"
+    },
+    {
+      "provider": "ashby",
+      "boardToken": "folio",
+      "name": "Folio"
+    },
+    {
+      "provider": "ashby",
+      "boardToken": "futurefitai",
+      "name": "FutureFit AI"
+    },
+    {
+      "provider": "ashby",
+      "boardToken": "hawk",
+      "name": "Hawk"
+    },
+    {
+      "provider": "ashby",
+      "boardToken": "horizon3ai",
+      "name": "Horizon3 AI"
+    },
+    {
+      "provider": "ashby",
+      "boardToken": "humatahealth",
+      "name": "Humata Health, Inc"
+    },
+    {
+      "provider": "ashby",
+      "boardToken": "inclined",
+      "name": "Inclined"
+    },
+    {
+      "provider": "ashby",
+      "boardToken": "infinity-constellation",
+      "name": "Infinity"
+    },
+    {
+      "provider": "ashby",
+      "boardToken": "influxdata",
+      "name": "InfluxData"
+    },
+    {
+      "provider": "ashby",
+      "boardToken": "jump",
+      "name": "Jump"
+    },
+    {
+      "provider": "ashby",
+      "boardToken": "leap",
+      "name": "Leap"
+    },
+    {
+      "provider": "ashby",
+      "boardToken": "leland",
+      "name": "Leland"
+    },
+    {
+      "provider": "ashby",
+      "boardToken": "leona",
+      "name": "Leona Health"
+    },
+    {
+      "provider": "ashby",
+      "boardToken": "loancrate",
+      "name": "Loancrate"
+    },
+    {
+      "provider": "ashby",
+      "boardToken": "mural",
+      "name": "Mural"
+    },
+    {
+      "provider": "ashby",
+      "boardToken": "netboxlabs",
+      "name": "NetBox Labs"
+    },
+    {
+      "provider": "ashby",
+      "boardToken": "nivoda",
+      "name": "Nivoda"
+    },
+    {
+      "provider": "ashby",
+      "boardToken": "obsidiansystems",
+      "name": "Obsidian Systems"
+    },
+    {
+      "provider": "ashby",
+      "boardToken": "onhires",
+      "name": "OnHires"
+    },
+    {
+      "provider": "ashby",
+      "boardToken": "overflow",
+      "name": "Overflow"
+    },
+    {
+      "provider": "ashby",
+      "boardToken": "paradigm-health",
+      "name": "Paradigm Health"
+    },
+    {
+      "provider": "ashby",
+      "boardToken": "pluralis-research",
+      "name": "Pluralis Research"
+    },
+    {
+      "provider": "ashby",
+      "boardToken": "praecipio",
+      "name": "Praecipio Consulting"
+    },
+    {
+      "provider": "ashby",
+      "boardToken": "quilter",
+      "name": "Quilter"
+    },
+    {
+      "provider": "ashby",
+      "boardToken": "radai",
+      "name": "Rad AI"
+    },
+    {
+      "provider": "ashby",
+      "boardToken": "rain",
+      "name": "Rain"
+    },
+    {
+      "provider": "ashby",
+      "boardToken": "ravenna",
+      "name": "Ravenna"
+    },
+    {
+      "provider": "ashby",
+      "boardToken": "reacher",
+      "name": "Reacher"
+    },
+    {
+      "provider": "ashby",
+      "boardToken": "revenuecat",
+      "name": "RevenueCat"
+    },
+    {
+      "provider": "ashby",
+      "boardToken": "revic",
+      "name": "Revic"
+    },
+    {
+      "provider": "ashby",
+      "boardToken": "roboflow",
+      "name": "Roboflow"
+    },
+    {
+      "provider": "ashby",
+      "boardToken": "shiftkey",
+      "name": "ShiftKey"
+    },
+    {
+      "provider": "ashby",
+      "boardToken": "snackpass",
+      "name": "Snackpass"
+    },
+    {
+      "provider": "ashby",
+      "boardToken": "socure",
+      "name": "Socure"
+    },
+    {
+      "provider": "ashby",
+      "boardToken": "solvd",
+      "name": "Solvd"
+    },
+    {
+      "provider": "ashby",
+      "boardToken": "stepful",
+      "name": "Stepful"
+    },
+    {
+      "provider": "ashby",
+      "boardToken": "tenex",
+      "name": "TENEX.AI"
+    },
+    {
+      "provider": "ashby",
+      "boardToken": "tremendous",
+      "name": "Tremendous"
+    },
+    {
+      "provider": "ashby",
+      "boardToken": "truelogic",
+      "name": "Truelogic"
+    },
+    {
+      "provider": "ashby",
+      "boardToken": "truemed",
+      "name": "Truemed"
+    },
+    {
+      "provider": "ashby",
+      "boardToken": "umbrel",
+      "name": "Umbrel"
+    },
+    {
+      "provider": "ashby",
+      "boardToken": "vendelux",
+      "name": "Vendelux"
+    },
+    {
+      "provider": "ashby",
+      "boardToken": "virtahealth",
+      "name": "Virta Health"
+    },
+    {
+      "provider": "ashby",
+      "boardToken": "virtuous",
+      "name": "Virtuous"
+    },
+    {
+      "provider": "ashby",
+      "boardToken": "webai",
+      "name": "webAI"
+    },
+    {
+      "provider": "ashby",
+      "boardToken": "wheel",
+      "name": "Wheel"
+    },
+    {
+      "provider": "ashby",
+      "boardToken": "zencastr",
+      "name": "Zencastr"
+    },
+    {
+      "provider": "ashby",
+      "boardToken": "ziplines",
+      "name": "Ziplines, Inc."
+    },
+    {
+      "provider": "greenhouse",
+      "boardToken": "accuweather",
+      "name": "AccuWeather Careers"
+    },
+    {
+      "provider": "greenhouse",
+      "boardToken": "addepar1",
+      "name": "Addepar"
+    },
+    {
+      "provider": "greenhouse",
+      "boardToken": "amplemarket",
+      "name": "Amplemarket"
+    },
+    {
+      "provider": "greenhouse",
+      "boardToken": "antora",
+      "name": "Antora Energy"
+    },
+    {
+      "provider": "greenhouse",
+      "boardToken": "archera",
+      "name": "Archera"
+    },
+    {
+      "provider": "greenhouse",
+      "boardToken": "attainpartners",
+      "name": "Attain Partners"
+    },
+    {
+      "provider": "greenhouse",
+      "boardToken": "aweber",
+      "name": "AWeber"
+    },
+    {
+      "provider": "greenhouse",
+      "boardToken": "brighthire",
+      "name": "BrightHire"
+    },
+    {
+      "provider": "greenhouse",
+      "boardToken": "solutions",
+      "name": "Cadence Solutions"
+    },
+    {
+      "provider": "greenhouse",
+      "boardToken": "centralreach",
+      "name": "CentralReach"
+    },
+    {
+      "provider": "greenhouse",
+      "boardToken": "counterparthealth",
+      "name": "Counterpart Health"
+    },
+    {
+      "provider": "greenhouse",
+      "boardToken": "designedconveyorsystems",
+      "name": "Designed Conveyor Systems"
+    },
+    {
+      "provider": "greenhouse",
+      "boardToken": "dlhcorporation",
+      "name": "DLH"
+    },
+    {
+      "provider": "greenhouse",
+      "boardToken": "fastspring",
+      "name": "FastSpring"
+    },
+    {
+      "provider": "greenhouse",
+      "boardToken": "gigaenergy",
+      "name": "Giga Energy"
+    },
+    {
+      "provider": "greenhouse",
+      "boardToken": "glydways",
+      "name": "Glydways"
+    },
+    {
+      "provider": "greenhouse",
+      "boardToken": "gremlin",
+      "name": "Gremlin"
+    },
+    {
+      "provider": "greenhouse",
+      "boardToken": "humaninterest",
+      "name": "Human Interest"
+    },
+    {
+      "provider": "greenhouse",
+      "boardToken": "hypori",
+      "name": "Hypori"
+    },
+    {
+      "provider": "greenhouse",
+      "boardToken": "axontalentcommunity",
+      "name": "Join Our Talent Community"
+    },
+    {
+      "provider": "greenhouse",
+      "boardToken": "kairospower",
+      "name": "Kairos Power"
+    },
+    {
+      "provider": "greenhouse",
+      "boardToken": "kunai",
+      "name": "Kunai"
+    },
+    {
+      "provider": "greenhouse",
+      "boardToken": "launch2",
+      "name": "Launch Potato"
+    },
+    {
+      "provider": "greenhouse",
+      "boardToken": "liftoff",
+      "name": "Liftoff"
+    },
+    {
+      "provider": "greenhouse",
+      "boardToken": "gomotive",
+      "name": "Motive"
+    },
+    {
+      "provider": "greenhouse",
+      "boardToken": "myfitnesspal",
+      "name": "MyFitnessPal"
+    },
+    {
+      "provider": "greenhouse",
+      "boardToken": "myriad360",
+      "name": "Myriad360"
+    },
+    {
+      "provider": "greenhouse",
+      "boardToken": "neuraflash",
+      "name": "NeuraFlash, Part of Accenture"
+    },
+    {
+      "provider": "greenhouse",
+      "boardToken": "nex",
+      "name": "Nex"
+    },
+    {
+      "provider": "greenhouse",
+      "boardToken": "ninjatrader",
+      "name": "NinjaTrader"
+    },
+    {
+      "provider": "greenhouse",
+      "boardToken": "octave",
+      "name": "Octave"
+    },
+    {
+      "provider": "greenhouse",
+      "boardToken": "onxmaps",
+      "name": "onX"
+    },
+    {
+      "provider": "greenhouse",
+      "boardToken": "penninteractive",
+      "name": "Penn Interactive"
+    },
+    {
+      "provider": "greenhouse",
+      "boardToken": "sonyinteractiveentertainmentglobal",
+      "name": "PlayStation Global"
+    },
+    {
+      "provider": "greenhouse",
+      "boardToken": "prevail",
+      "name": "Prevail"
+    },
+    {
+      "provider": "greenhouse",
+      "boardToken": "prove",
+      "name": "Prove"
+    },
+    {
+      "provider": "greenhouse",
+      "boardToken": "reltio",
+      "name": "Reltio"
+    },
+    {
+      "provider": "greenhouse",
+      "boardToken": "rithumliboard",
+      "name": "Rithum LinkedIn Board"
+    },
+    {
+      "provider": "greenhouse",
+      "boardToken": "robotsandpencils",
+      "name": "Robots and Pencils"
+    },
+    {
+      "provider": "greenhouse",
+      "boardToken": "scopely",
+      "name": "Scopely"
+    },
+    {
+      "provider": "greenhouse",
+      "boardToken": "scoutspace",
+      "name": "Scout Space"
+    },
+    {
+      "provider": "greenhouse",
+      "boardToken": "sifthealthcare",
+      "name": "Sift Healthcare"
+    },
+    {
+      "provider": "greenhouse",
+      "boardToken": "squarespace",
+      "name": "Squarespace"
+    },
+    {
+      "provider": "greenhouse",
+      "boardToken": "stackexchange",
+      "name": "Stack Overflow"
+    },
+    {
+      "provider": "greenhouse",
+      "boardToken": "straightarrownews",
+      "name": "Straight Arrow"
+    },
+    {
+      "provider": "greenhouse",
+      "boardToken": "striveworks",
+      "name": "Striveworks"
+    },
+    {
+      "provider": "greenhouse",
+      "boardToken": "synack",
+      "name": "Synack"
+    },
+    {
+      "provider": "greenhouse",
+      "boardToken": "system",
+      "name": "System"
+    },
+    {
+      "provider": "greenhouse",
+      "boardToken": "teachstone",
+      "name": "Teachstone"
+    },
+    {
+      "provider": "greenhouse",
+      "boardToken": "techholding",
+      "name": "Tech Holding"
+    },
+    {
+      "provider": "greenhouse",
+      "boardToken": "torotms",
+      "name": "Toro TMS"
+    },
+    {
+      "provider": "greenhouse",
+      "boardToken": "tubitv",
+      "name": "Tubi"
+    },
+    {
+      "provider": "greenhouse",
+      "boardToken": "survata",
+      "name": "Upwave"
+    },
+    {
+      "provider": "greenhouse",
+      "boardToken": "veeamsoftware",
+      "name": "Veeam Software"
+    },
+    {
+      "provider": "greenhouse",
+      "boardToken": "waymark",
+      "name": "Waymark"
+    },
+    {
+      "provider": "greenhouse",
+      "boardToken": "weedmaps77",
+      "name": "Weedmaps"
+    },
+    {
+      "provider": "greenhouse",
+      "boardToken": "youcom",
+      "name": "You.com"
+    },
+    {
+      "provider": "greenhouse",
+      "boardToken": "zscaler",
+      "name": "Zscaler"
+    },
+    {
+      "provider": "lever",
+      "boardToken": "activecampaign",
+      "name": "ActiveCampaign"
+    },
+    {
+      "provider": "lever",
+      "boardToken": "AIFund",
+      "name": "AIFund"
+    },
+    {
+      "provider": "lever",
+      "boardToken": "Allata",
+      "name": "Allata"
+    },
+    {
+      "provider": "lever",
+      "boardToken": "Anlatan",
+      "name": "Anlatan"
+    },
+    {
+      "provider": "lever",
+      "boardToken": "apryse",
+      "name": "Apryse"
+    },
+    {
+      "provider": "lever",
+      "boardToken": "arcadia",
+      "name": "Arcadia"
+    },
+    {
+      "provider": "lever",
+      "boardToken": "bellotalabs",
+      "name": "Bellota Labs"
+    },
+    {
+      "provider": "lever",
+      "boardToken": "brilliant",
+      "name": "Brilliant"
+    },
+    {
+      "provider": "lever",
+      "boardToken": "captivateiq",
+      "name": "CaptivateIQ"
+    },
+    {
+      "provider": "lever",
+      "boardToken": "copilotkit",
+      "name": "CopilotKit, Inc."
+    },
+    {
+      "provider": "lever",
+      "boardToken": "crosscountry-consulting",
+      "name": "CrossCountry Consulting"
+    },
+    {
+      "provider": "lever",
+      "boardToken": "curai",
+      "name": "Curai"
+    },
+    {
+      "provider": "lever",
+      "boardToken": "decilegroup",
+      "name": "Decile Group"
+    },
+    {
+      "provider": "lever",
+      "boardToken": "egen",
+      "name": "Egen"
+    },
+    {
+      "provider": "lever",
+      "boardToken": "endpointclinical",
+      "name": "Endpoint Clinical"
+    },
+    {
+      "provider": "lever",
+      "boardToken": "voxy-engen",
+      "name": "EnGen"
+    },
+    {
+      "provider": "lever",
+      "boardToken": "erg",
+      "name": "ERG"
+    },
+    {
+      "provider": "lever",
+      "boardToken": "gauntlet",
+      "name": "Gauntlet"
+    },
+    {
+      "provider": "lever",
+      "boardToken": "glass-health-inc",
+      "name": "Glass Health Inc."
+    },
+    {
+      "provider": "lever",
+      "boardToken": "gopuff",
+      "name": "Gopuff"
+    },
+    {
+      "provider": "lever",
+      "boardToken": "grantstreet",
+      "name": "Grant Street Group"
+    },
+    {
+      "provider": "lever",
+      "boardToken": "humble-robotics",
+      "name": "Humble Robotics"
+    },
+    {
+      "provider": "lever",
+      "boardToken": "isee",
+      "name": "ISEE"
+    },
+    {
+      "provider": "lever",
+      "boardToken": "jito.wtf",
+      "name": "Jito Labs"
+    },
+    {
+      "provider": "lever",
+      "boardToken": "kobie",
+      "name": "Kobie Marketing"
+    },
+    {
+      "provider": "lever",
+      "boardToken": "merlinlabs",
+      "name": "Merlin Labs"
+    },
+    {
+      "provider": "lever",
+      "boardToken": "mythic-ai.com",
+      "name": "Mythic"
+    },
+    {
+      "provider": "lever",
+      "boardToken": "nextech",
+      "name": "Nextech"
+    },
+    {
+      "provider": "lever",
+      "boardToken": "nextgenfed",
+      "name": "NextGen Federal Systems"
+    },
+    {
+      "provider": "lever",
+      "boardToken": "nibiru",
+      "name": "Nibiru"
+    },
+    {
+      "provider": "lever",
+      "boardToken": "olo",
+      "name": "Olo"
+    },
+    {
+      "provider": "lever",
+      "boardToken": "patchmypc",
+      "name": "Patch My PC"
+    },
+    {
+      "provider": "lever",
+      "boardToken": "peerspace",
+      "name": "Peerspace"
+    },
+    {
+      "provider": "lever",
+      "boardToken": "planettechnologies",
+      "name": "Planet Technologies"
+    },
+    {
+      "provider": "lever",
+      "boardToken": "pointclickcare",
+      "name": "PointClickCare"
+    },
+    {
+      "provider": "lever",
+      "boardToken": "postera",
+      "name": "PostEra"
+    },
+    {
+      "provider": "lever",
+      "boardToken": "redoxengine",
+      "name": "Redox"
+    },
+    {
+      "provider": "lever",
+      "boardToken": "relay",
+      "name": "Relay"
+    },
+    {
+      "provider": "lever",
+      "boardToken": "skygrid",
+      "name": "SkyGrid"
+    },
+    {
+      "provider": "lever",
+      "boardToken": "smarsh",
+      "name": "Smarsh"
+    },
+    {
+      "provider": "lever",
+      "boardToken": "smiledigitalhealth",
+      "name": "Smile Digital Health"
+    },
+    {
+      "provider": "lever",
+      "boardToken": "spreedly",
+      "name": "Spreedly"
+    },
+    {
+      "provider": "lever",
+      "boardToken": "synapticure",
+      "name": "SynaptiCure Inc."
+    },
+    {
+      "provider": "lever",
+      "boardToken": "sysdig",
+      "name": "Sysdig"
+    },
+    {
+      "provider": "lever",
+      "boardToken": "system1",
+      "name": "System1"
+    },
+    {
+      "provider": "lever",
+      "boardToken": "theathletic",
+      "name": "The Athletic Media Company"
+    },
+    {
+      "provider": "lever",
+      "boardToken": "truetandem",
+      "name": "True Tandem"
+    },
+    {
+      "provider": "lever",
+      "boardToken": "truezerotech",
+      "name": "True Zero Technologies"
+    },
+    {
+      "provider": "lever",
+      "boardToken": "vedatechlabs",
+      "name": "Veda Tech Labs"
+    },
+    {
+      "provider": "lever",
+      "boardToken": "wisecode",
+      "name": "WISEcode"
+    },
+    {
+      "provider": "lever",
+      "boardToken": "zushealth",
+      "name": "Zus Health"
+    }
+  ]
+}

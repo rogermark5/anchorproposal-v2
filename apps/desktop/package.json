@@ -1,6 +1,6 @@
 {
   "name": "@anchorproposal/desktop",
-  "version": "0.2.4",
+  "version": "0.2.5",
   "private": true,
   "description": "AnchorProposal Windows desktop companion",
   "author": "AnchorProposal",
@@ -13,6 +13,7 @@
     "test": "node --test test/*.test.cjs",
     "test:smoke": "node scripts/smoke.cjs",
     "package:win": "node scripts/package.cjs",
+    "verify:package": "node scripts/verify-package.cjs",
     "package:dir": "pnpm build && electron-builder --dir --win --x64"
   },
   "dependencies": { "react": "^19.2.7", "react-dom": "^19.2.7", "lucide-react": "^0.469.0" },

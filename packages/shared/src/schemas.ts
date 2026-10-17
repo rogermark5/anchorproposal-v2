@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { HEADER_ACCENTS, WATERMARKS, SECTION_STYLES } from './template-design';
 
 /** Skill row: { "Frontend Development": "React, TypeScript, ..." } */
 export const promptSkillRowSchema = z.record(z.string());
@@ -73,6 +74,9 @@ export const promptResumeSchema = z.object({
   experiences: z.array(z.record(z.any())).default([]),
   educations: z.array(z.record(z.any())).default([]),
   certificates: z.array(z.record(z.any())).default([]),
+  projects: z.array(z.record(z.any())).optional(),
+  headline: z.string().optional(),
+  coreExpertise: z.array(z.string()).optional(),
 });
 
 export type PromptResumeContent = z.infer<typeof promptResumeSchema>;
@@ -96,6 +100,10 @@ export const generationOutputSchema = z.object({
   experiences: z.array(z.record(z.any())).default([]),
   educations: z.array(z.record(z.any())).default([]),
   certificates: z.array(z.record(z.any())).default([]),
+  // Optional sections are supplied by the authenticated document editor.
+  projects: z.array(z.record(z.any())).optional(),
+  headline: z.string().optional(),
+  coreExpertise: z.array(z.string()).optional(),
   coverLetter: coverLetterSchema.optional(),
 });
 
@@ -108,6 +116,9 @@ export const documentEditsSchema = z.object({
   experiences: z.array(z.object({ title: z.string().trim().min(1, 'Enter a position for each experience.').max(300), bullets: z.array(editedText.min(1)).min(1, 'Enter at least one bullet for each experience.').max(80) }).strict()).max(100),
   educations: z.array(z.object({ degree: editedText, institution: editedText, dates: editedText, location: editedText.optional() }).strict().refine(row => row.degree || row.institution, 'Enter a degree or institution, or remove the empty education entry.')).max(50),
   certificates: z.array(z.object({ name: editedText.min(1, 'Enter a certification name.'), issuer: editedText, date: editedText }).strict()).max(100),
+  projects: z.array(z.object({name:editedText.min(1,'Enter a project name.'),description:editedText,technologies:editedText,url:z.string().trim().max(2000).refine(value=>{if(!value)return true;try{const url=new URL(value);return ['http:','https:'].includes(url.protocol)&&!!url.hostname;}catch{return false;}},'Use a valid HTTP or HTTPS project URL.'),dates:editedText,bullets:z.array(editedText.min(1)).max(40)}).strict()).max(30).optional(),
+  headline: z.string().trim().max(500).optional(),
+  coreExpertise: z.array(z.string().trim().min(1).max(200)).max(60).optional(),
   coverLetter: z.object({ greeting: editedText.min(1, 'Enter a cover letter greeting.'), paragraphs: z.array(editedText.min(1)).min(1, 'Enter cover letter paragraph text.').max(30), closing: editedText.min(1, 'Enter a cover letter closing.') }).strict().optional(),
   idempotencyKey: z.string().min(16).max(150).optional(),
 }).strict();
@@ -251,6 +262,9 @@ export function skillRows(
   );
 }
 
+const designColor = z.string().regex(/^#[0-9a-f]{6}$/i, 'Use a six-digit hex color, such as #1e3a5f.');
+const designElement = z.object({visible:z.boolean().optional(),line:z.union([z.literal(1),z.literal(2)]).optional(),align:z.enum(['left','center','right']).optional(),bold:z.boolean().optional(),italic:z.boolean().optional(),color:designColor.optional()});
+const entryDesign = z.object({layout:z.enum(['single','double']).default('double'),lineGap:z.number().min(0).max(720).default(40),bulletGap:z.number().min(0).max(720).default(60),separator:z.string().max(12).default('•'),elements:z.record(z.string(),designElement).default({})});
 export const templateConfigSchema = z.object({
   typography: z
     .object({
@@ -276,7 +290,7 @@ export const templateConfigSchema = z.object({
       marginLeft: z.number().default(48),
       marginRight: z.number().default(48),
       sectionSpacing: z.number().default(16),
-      headerAlignment: z.enum(['left', 'center']).default('left'),
+      headerAlignment: z.enum(['left', 'center', 'right']).default('left'),
       contactSeparator: z.string().default('·'),
       nameContactGap: z.number().default(6),
     })
@@ -302,11 +316,16 @@ export const templateConfigSchema = z.object({
       showPhone: z.boolean().default(true),
       showLocation: z.boolean().default(true),
       showLinkedin: z.boolean().default(true),
+      elements: z.record(z.string(),designElement).default({}),
     })
     .default({}),
   pdf: z
     .object({
-      headerAccent: z.enum(['none', 'top-rule', 'top-band', 'side']).default('none'),
+      headerAccent: z.enum(HEADER_ACCENTS).default('none'),
+      watermark: z.enum(WATERMARKS).default('none'),
+      sectionStyle: z.enum(SECTION_STYLES).optional(),
+      theme: z.string().max(60).optional(),
+      watermarkOpacity:z.number().min(.02).max(.3).default(.12),
     })
     .default({}),
   styles: z
@@ -321,6 +340,10 @@ export const templateConfigSchema = z.object({
       locationItalic: z.boolean().default(false),
       showCertIssuer: z.boolean().default(true),
       showCertDate: z.boolean().default(true),
+      headingLineStyle:z.enum(['none','full','short','double']).default('none'),
+      headingLineColor:designColor.optional(),
+      headingLineThickness:z.number().min(1).max(32).default(8),
+      headingLineSpacing:z.number().min(0).max(720).default(60),
     })
     .default({}),
   sections: z
@@ -335,8 +358,16 @@ export const templateConfigSchema = z.object({
         education: true,
         certifications: true,
       }),
+      labels:z.record(z.string(),z.string().trim().max(100)).default({}),
+      headingAlignment:z.enum(['left','center','right']).default('left'),
     })
     .default({}),
+  experience:entryDesign.optional(),
+  education:entryDesign.optional(),
+  certifications:entryDesign.optional(),
+  headline:z.object({fontSize:z.number().min(6).max(36).optional(),topGap:z.number().min(0).max(1440).default(0),bottomGap:z.number().min(0).max(1440).default(120),color:designColor.optional(),bold:z.boolean().default(false),italic:z.boolean().default(true),alignment:z.enum(['left','center','right']).default('left')}).default({}),
+  expertise:z.object({layout:z.enum(['inline','bullets','grid']).default('inline'),columns:z.number().int().min(2).max(4).default(2)}).default({}),
+  projects:entryDesign.optional(),
   meta: z
     .object({
       description: z.string().optional(),

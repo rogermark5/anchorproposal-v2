@@ -11,8 +11,12 @@ async function run({ window, auth, settings, safeStorage, globalShortcut, direct
   const profile = { id: 'profile-1', firstName: 'Alex', lastName: 'Morgan', email: 'alex@example.test', profileTitle: 'Senior Software Engineer', isDefault: true, experiences: [], educations: [], certificates: [], technicalSkills: [] };
   const profiles = [profile];
   const template = { id: 'template-1', name: 'Modern Executive', preset: 'modern', isDefault: true, isPublished: true, version: 1, configJson: {} };
-  const content = { contact: { name: 'Alex Morgan', title: 'Software Engineer' }, summary: 'Software engineer building reliable services.', skills: [{ Languages: 'TypeScript, Python' }], experiences: [], educations: [], certificates: [], coverLetter: { greeting: 'Dear hiring team,', paragraphs: ['I build reliable services and would welcome the opportunity to contribute.'], closing: 'Sincerely,', signatureName: 'Alex Morgan' } };
+  const content = { contact: { name: 'Alex Morgan', title: 'Software Engineer', email: profile.email }, summary: 'Software engineer building reliable services.', skills: [{ Languages: 'TypeScript, Python' }], experiences: [], educations: [], certificates: [], coverLetter: { greeting: 'Dear hiring team,', paragraphs: ['I build reliable services and would welcome the opportunity to contribute.'], closing: 'Sincerely,', signatureName: 'Alex Morgan' } };
   const html = '<!doctype html><html><body style="margin:0;background:white;color:#182b3d"><div class="page" style="box-sizing:border-box;width:816px;min-height:1056px;padding:60px;font-family:Arial"><h1>Alex Morgan</h1><h2>Senior Software Engineer</h2><hr><h3>PROFESSIONAL SUMMARY</h3><p>Software engineer building reliable services and thoughtful products.</p></div></body></html>';
+  const generations = [{ id: 'gen-1', version: 1, status: 'COMPLETED', structuredOutputJson: content, files: [] }];
+  const documentDisplay = { showJobTitle: true };
+  const previewFor = generation => ({ html: html.replace('Software engineer building reliable services and thoughtful products.', generation.structuredOutputJson.summary), pageSize: 'LETTER', canEdit: true, content: generation.structuredOutputJson, version: generation.version,
+    coverLetterHtml: html.replace('<h3>PROFESSIONAL SUMMARY</h3><p>Software engineer building reliable services and thoughtful products.</p>', `<p>${profile.email}</p><p>Dear hiring team,</p><p>${generation.structuredOutputJson.coverLetter.paragraphs.join('</p><p>')}</p><p>Sincerely,</p><p>Alex Morgan</p>`) });
   const server = http.createServer(async (req, res) => {
     let raw = ''; for await (const chunk of req) raw += chunk;
     const data = raw && req.headers['content-type']?.includes('application/json') ? JSON.parse(raw) : {}; const route = new URL(req.url, 'http://localhost').pathname;
@@ -24,11 +28,21 @@ async function run({ window, auth, settings, safeStorage, globalShortcut, direct
     if (route === '/auth/me') return json(account());
     if (route === '/settings/generation-workflow') {
       const prompt = { id: 'prompt-1', name: 'My prompt', content: 'Use the saved profile positions.', documentKind: 'combined', experienceTitleMode: 'saved', version: 1, isPublished: true };
-      return json({ mode: 'profile', defaultPrompt: prompt, prompts: [prompt], profiles: profiles.map(p => ({ id: p.id, name: p.firstName + ' ' + p.lastName, title: p.profileTitle, resumePromptId: 'prompt-1', coverLetterPromptId: null })), jsonRules: { combined: 'Return valid JSON.', resume: 'Return resume JSON.', 'cover-letter': 'Return cover-letter JSON.' } });
+      return json({ mode: 'profile', defaultPrompt: prompt, prompts: [prompt], documentDisplay, profiles: profiles.map(p => ({ id: p.id, name: p.firstName + ' ' + p.lastName, title: p.profileTitle, resumePromptId: 'prompt-1', coverLetterPromptId: null })), jsonRules: { combined: 'Return valid JSON.', resume: 'Return resume JSON.', 'cover-letter': 'Return cover-letter JSON.' } });
     }
+    if (route === '/settings/document-display' && req.method === 'PATCH') { Object.assign(documentDisplay, data); return json(documentDisplay); }
     if (route === '/profiles/profile-1/generation-preference') return json({ resumePromptId: 'prompt-1', coverLetterPromptId: null });
-    if (route === '/applications/app-1/generations') return json(complete ? [{ id: 'gen-1', version: 1, status: 'COMPLETED', structuredOutputJson: content, files: [] }] : []);
-    if (route === '/generations/gen-1/public-link') return json(req.method === 'DELETE' ? { success: true } : { path: '/resume/qa-public-token', expiresAt: '2026-11-12T00:00:00Z' });
+    if (route === '/applications/app-1/generations') return json(complete ? generations : []);
+    if (/^\/generations\/gen-\d+\/public-link$/.test(route)) return json(req.method === 'DELETE' ? { success: true } : { path: '/resume/qa-public-token', expiresAt: '2026-11-12T00:00:00Z' });
+    const document = generations.find(generation => route === `/generations/${generation.id}` || route.startsWith(`/generations/${generation.id}/`));
+    if (document && route.endsWith('/preview')) return json(previewFor(document));
+    if (document && /\/(draft-preview|edits)$/.test(route)) {
+      const { idempotencyKey, ...edits } = data;
+      const edited = { id: `gen-${generations.length + 1}`, version: generations.length + 1, status: 'COMPLETED', files: [], structuredOutputJson: { ...document.structuredOutputJson, ...edits } };
+      if (route.endsWith('/draft-preview')) return json(previewFor(edited));
+      generations.unshift(edited); return json({ generation: edited, preview: previewFor(edited) });
+    }
+    if (document && route === `/generations/${document.id}`) return json(document);
     if (route === '/auth/logout') return json({ success: true });
     if (route === '/dashboard/metrics') return json({ kpis: { total: 24, applied: 18, readyToApply: 6, interviews: 4, offers: 1, warnings: 2 }, trend: [], recentGenerations: [], byAdmin: [], byBidder: [], filterOptions: { admins: [], bidders: [] } });
     if (route === '/profiles') { if (req.method === 'POST') { const created = { ...profile, ...data, id: 'profile-2', isDefault: false }; profiles.push(created); return json(created); } return json(profiles); }
@@ -40,8 +54,8 @@ async function run({ window, auth, settings, safeStorage, globalShortcut, direct
     if (route.includes('/preview')) return json({ html, pageSize: 'LETTER' });
     if (route === '/application-options') return json({ locations: [{ id: 'location-1', type: 'LOCATION', value: 'Remote', isDefault: true }], sources: [{ id: 'source-1', type: 'SOURCE', value: 'LinkedIn', isDefault: true }] });
     if (route === '/applications' && req.method === 'POST') { saved = { ...data, id: 'app-1', status: 'SAVED', createdAt: new Date().toISOString(), profile, warnings: [{ id: 'warning-1', category: 'REMOTE_CONFLICT', matchedText: 'This role includes hybrid work with two days onsite each week.', behavior: warningBehavior }] }; return json(saved); }
-    if (route === '/applications') return json(saved ? [{ ...saved, bidder: account(), _count: { generations: complete ? 1 : 0 }, latestGenerationId: complete ? 'gen-1' : null }] : []);
-    if (route === '/applications/app-1') { if (req.method === 'PATCH') saved = { ...saved, ...data }; return json({ ...saved, generations: complete ? [{ id: 'gen-1', version: 1, status: 'COMPLETED', structuredOutputJson: content, files: [] }] : [], notes: [], statusHistory: [] }); }
+    if (route === '/applications') return json(saved ? [{ ...saved, bidder: account(), _count: { generations: complete ? generations.length : 0 }, latestGenerationId: complete ? generations[0].id : null }] : []);
+    if (route === '/applications/app-1') { if (req.method === 'PATCH') saved = { ...saved, ...data }; return json({ ...saved, generations: complete ? generations : [], notes: [], statusHistory: [] }); }
     if (route.endsWith('/generation-prompt')) return json({ usedDefault: false, profileName: 'Alex Morgan' });
     if (route.endsWith('/acknowledge')) return json({ success: true });
     if (route.endsWith('/manual-generation-prompt')) return json({ experienceTitleMode: 'tailored', prompt: 'SYSTEM INSTRUCTIONS\nReturn resume JSON.\nRESUME REQUEST\nAlex Morgan.', contextHash: 'a'.repeat(64), templateId: 'template-1' });
@@ -51,7 +65,7 @@ async function run({ window, auth, settings, safeStorage, globalShortcut, direct
       await delay(1600); complete = true; res.end('data: {"stage":"completed","generationId":"gen-1"}\n\n'); return;
     }
     if (route === '/generations/gen-1') return json({ id: 'gen-1', status: 'COMPLETED', structuredOutputJson: content, files: [] });
-    if (route === '/generations/gen-1/export') { await delay(400); return json({ id: 'document-1', filename: data.kind === 'COVER_LETTER' ? 'Alex_Morgan_Cover_Letter.pdf' : 'Alex_Morgan_Resume.pdf' }); }
+    if (/^\/generations\/gen-\d+\/export$/.test(route)) { await delay(400); return json({ id: 'document-1', filename: data.kind === 'COVER_LETTER' ? 'Alex_Morgan_Cover_Letter.pdf' : 'Alex_Morgan_Resume.pdf' }); }
     if (route === '/documents/document-1/download') { res.writeHead(200, { 'Content-Type': 'application/pdf' }); return res.end('%PDF-1.4\nQA document'); }
     if (route.endsWith('/answers') || route.endsWith('/answers/prompt')) return json({ primed: true, ack: 'yes', items: req.method === 'POST' && data.question ? [{ question: data.question, answer: 'I build reliable backend services and support distributed teams.' }] : [] });
     if (['/users', '/users/admins', '/settings/prompts', '/settings/prompt-library', '/settings/warning-rules', '/audit'].includes(route)) return json([]);
@@ -114,19 +128,34 @@ async function run({ window, auth, settings, safeStorage, globalShortcut, direct
     await waitFor('document.querySelector("#quick-profile").textContent.includes("New Profile")'); checks.push('Profile mutations synchronize to the open quick window; title bar can drag and position persists');
     assert.equal(await evaluate('(() => { const r = document.querySelector(".quick-footer .native-primary").getBoundingClientRect(); return r.top >= 42 && r.bottom <= innerHeight; })()'), true, 'Create action must fit in the visible quick window');
     await fill('.quick-form input', 'Senior Backend Engineer'); await fill('.quick-form .space-y-4 > div:nth-child(2) input', 'Northstar Labs'); await fill('.quick-form textarea', 'Build Java services. This role includes hybrid work with two days onsite each week.'); await capture('03-quick-application');
+    await evaluate('document.querySelector(".quick-form input[type=checkbox]").click()');
+    assert.equal(await evaluate('document.querySelector("#app-job-url").disabled && document.querySelector("#app-job-url").value === ""'), true);
     await click('Create & generate'); await waitFor('!!document.querySelector(".quick-dialog")'); assert.ok((await evaluate('document.querySelector(".quick-dialog").textContent')).includes('hybrid')); await capture('04-warning'); await click('Cancel');
     assert.equal(requests.filter(r => r.route.endsWith('/generations/stream')).length, 0); await click('Create & generate'); await waitFor('!!document.querySelector(".quick-dialog")'); await click('Continue');
     await waitFor('!!document.querySelector(".progress-track")'); assert.ok(target.getBounds().height <= 390); assert.equal(requests.filter(r => r.route === '/applications' && r.method === 'POST').length, 1); await capture('05-progress');
     await waitFor('document.body.innerText.includes("Your resume is ready")'); checks.push('Warning confirmation, duplicate-safe save, streaming progress and server completion');
+    assert.equal(saved.jobUrl, ''); checks.push('No job link submits an empty URL without a fake placeholder');
     target = window; await waitFor('document.body.innerText.includes("Northstar Labs")'); target = getQuickWindow(); checks.push('Open application list refreshes after quick creation without reloading the window');
     await showQuick(true); await waitFor('document.body.innerText.includes("Your resume is ready")');
     await waitFor('!!document.querySelector(".quick-result iframe")'); assert.ok(target.getBounds().height > 390);
-    await click('Cover letter'); await waitFor('document.body.innerText.includes("Dear hiring team,")'); await capture('result-cover-letter');
+    await click('Cover letter'); await waitFor('document.querySelector("#result-panel-1 iframe")?.srcdoc.includes("alex@example.test")'); await capture('result-cover-letter');
+    checks.push('Quick cover letter uses the professional HTML preview with saved profile contact details');
     const { dialog } = require('electron'); const originalSaveDialog = dialog.showSaveDialog;
     const savedLetter = path.join(directory, 'saved-cover-letter.pdf');
     dialog.showSaveDialog = async () => ({ canceled: false, filePath: savedLetter });
     try { await click('Save PDF'); await waitFor('document.body.innerText.includes("Preparing cover letter PDF")'); await waitFor('document.body.innerText.includes("Saved saved-cover-letter.pdf")'); assert.match(await fs.readFile(savedLetter, 'utf8'), /^%PDF/); }
     finally { dialog.showSaveDialog = originalSaveDialog; }
+    await click('Preview and edit documents'); await waitFor('!!document.querySelector("dialog[open] iframe")'); await click('Edit documents');
+    await fill('[aria-label="Edit professional summary"]', 'Edited desktop summary for reliable services.'); await click('Preview changes');
+    await waitFor('document.querySelector("dialog iframe")?.srcdoc.includes("Edited desktop summary")'); assert.equal(generations.length, 1);
+    await click('Save and rebuild'); await waitFor('document.querySelector("[aria-label=\\"Resume version\\"]")?.value === "gen-2"');
+    await evaluate('document.querySelector("[aria-label=\\"Close preview\\"]").click()');
+    await waitFor('!document.querySelector("dialog[open]") && !!document.querySelector("#result-panel-1 iframe")');
+    assert.equal(generations.length, 2); assert.equal(generations[1].structuredOutputJson.summary, content.summary);
+    dialog.showSaveDialog = async () => ({ canceled: false, filePath: path.join(directory, 'edited-cover-letter.pdf') });
+    try { await click('Save PDF'); await waitFor('document.body.innerText.includes("Saved edited-cover-letter.pdf")'); assert.ok(requests.some(request => request.route === '/generations/gen-2/export')); }
+    finally { dialog.showSaveDialog = originalSaveDialog; }
+    await capture('edited-quick-documents'); checks.push('Quick preview edits create a separate saved version and subsequent exports use that version');
     await evaluate('window.dispatchEvent(new KeyboardEvent("keydown", {key:"3",ctrlKey:true,bubbles:true}))');
     await waitFor('!!document.querySelector(".quick-answers textarea") && !document.querySelector(".quick-answers textarea").disabled');
     await fill('.quick-answers textarea', 'Why would I be a good fit?'); await evaluate('document.querySelector(".quick-answers textarea").form.requestSubmit()'); await waitFor('document.body.innerText.includes("I build reliable backend services")');
@@ -143,11 +172,15 @@ async function run({ window, auth, settings, safeStorage, globalShortcut, direct
     assert.equal(await evaluate('document.querySelector("dialog[open] footer input").value'), 'https://anchorproposal.giize.com/resume/qa-public-token');
     assert.equal(await evaluate('window.__qaCopiedLink'), 'https://anchorproposal.giize.com/resume/qa-public-token');
     await capture('public-resume-link'); await click('Revoke public link'); await waitFor('!document.querySelector("dialog[open] footer input")');
-    await evaluate('document.querySelector("dialog[open] header button").click()');
+    await evaluate('document.querySelector("[aria-label=\\"Close preview\\"]").click()');
     checks.push('Native public sharing uses the hosted website URL and revocation clears the link');
     assert.ok(requests.some(request => request.route === '/settings/generation-workflow'));
     await evaluate('window.anchor.request("/profiles/profile-1/generation-preference", "PUT", {resumePromptId:"prompt-1",coverLetterPromptId:null})');
     checks.push('Private generation settings and profile preferences use permitted native API routes');
+    await route('/settings'); await waitFor('!!document.querySelector("[aria-label=\\"Header job title visibility\\"]")');
+    await fill('[aria-label="Header job title visibility"]', 'hidden'); await click('Save appearance');
+    await waitFor('[...document.querySelectorAll("button")].some(button => button.textContent === "Save appearance" && button.disabled)');
+    assert.equal(documentDisplay.showJobTitle, false); checks.push('Resume header title visibility saves through the native bridge');
     await route('/settings?way=separate&profile=profile-2');
     await waitFor('document.querySelector("#generation-way-panel select")?.value === "profile-2"');
     assert.ok(await evaluate('document.querySelector("#generation-way-panel").innerText.includes("Generate the resume")'));
