@@ -74,8 +74,8 @@ test('document editing and header appearance use only their supported native req
 });
 
 test('Job Pool supports browsing, master management and applying with exact native routes', () => {
-  for (const [route, method] of [['/job-pool?q=engineer&page=2', 'GET'], ['/job-pool', 'POST'], ['/job-pool/manage', 'GET'], ['/job-pool/manage', 'PATCH'], ['/job-pool/sources', 'POST'], ['/job-pool/sources/source-1', 'PATCH'], ['/job-pool/sync', 'POST'], ['/job-pool/jobs/job-1', 'GET'], ['/job-pool/jobs/job-1', 'PATCH'], ['/job-pool/jobs/job-1/apply', 'POST'], ['/job-pool/jobs/job-1/applied', 'PATCH']]) apiRequest(route, method);
-  for (const [route, method] of [['/job-pool/manage', 'POST'], ['/job-pool/sync', 'GET'], ['/job-pool/jobs/job-1/apply', 'PATCH'], ['/job-pool/jobs/job-1/applied', 'POST'], ['/job-pool/sources/source-1', 'DELETE']]) assert.throws(() => apiRequest(route, method));
+  for (const [route, method] of [['/job-pool/updates?since=2026-10-18T00%3A00%3A00.000Z', 'GET'], ['/job-pool?q=engineer&page=2', 'GET'], ['/job-pool', 'POST'], ['/job-pool/manage', 'GET'], ['/job-pool/manage', 'PATCH'], ['/job-pool/sources', 'POST'], ['/job-pool/sources/source-1', 'PATCH'], ['/job-pool/sync', 'POST'], ['/job-pool/jobs/job-1', 'GET'], ['/job-pool/jobs/job-1', 'PATCH'], ['/job-pool/jobs/job-1/apply', 'POST'], ['/job-pool/jobs/job-1/applied', 'PATCH'], ['/job-pool/jobs/job-1/viewed', 'PATCH']]) apiRequest(route, method);
+  for (const [route, method] of [['/job-pool/updates', 'POST'], ['/job-pool/updates', 'PATCH'], ['/job-pool/manage', 'POST'], ['/job-pool/sync', 'GET'], ['/job-pool/jobs/job-1/apply', 'PATCH'], ['/job-pool/jobs/job-1/applied', 'POST'], ['/job-pool/jobs/job-1/viewed', 'POST'], ['/job-pool/sources/source-1', 'DELETE']]) assert.throws(() => apiRequest(route, method));
 });
 test('only an encrypted refresh token is persisted; access token and password never reach disk', async t => {
   const s = await fixture(t, async () => json({ user: { id: 'test' }, accessToken: 'qa-access-secret', refreshToken: 'qa-refresh-secret' }));

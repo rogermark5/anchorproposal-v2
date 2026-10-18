@@ -1,19 +1,24 @@
 import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException, OnApplicationBootstrap, OnModuleDestroy } from '@nestjs/common';
 import { Prisma, UserRole } from '@prisma/client';
+import { randomUUID } from 'node:crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { ApplicationsService } from '../applications/applications.service';
 import { AuthUser } from '../common/types/auth.types';
 import { normalizedJobUrl } from '../applications/job-url';
-import { fetchJobPage, FeedError, isUsLocation, JOB_PROVIDERS, jobDate, MAX_IMPORT_PAGES, MIN_SYNC_MS, plainText, publicJobUrl } from './job-providers';
+import { fetchJobPage, FeedError, JOB_PROVIDERS, jobDate, MAX_IMPORT_PAGES, MIN_SYNC_MS, plainText, publicJobUrl, sourceCountries } from './job-providers';
+import { eligibleCountries, poolCountry, POOL_COUNTRIES, COUNTRY_NAMES } from './job-geography';
 import { isSoftwareJob } from './software-jobs';
 import { FREEHIRE_MAX_PAGES, FREEHIRE_SOURCES } from './freehire-feed';
 import { poolJobIdentity } from './job-identity';
 import { REMOTEJOBS_CATEGORIES, REMOTEJOBS_MAX_PAGES, postingShingles, samePostingContent, samePostingGroup } from './remotejobs-feed';
+import { PUBLIC_CAREER_PROVIDERS, validCareerBoard } from './public-career-feeds';
 
 const SETTINGS_KEY = 'job_pool_settings';
+const LATEST_IMPORT_KEY = 'job_pool_latest_additions';
 const DAY = 86400_000;
 const AGGREGATORS = ['freehire', 'freehire-global', 'ocean', 'remotejobs'];
 type PoolSettings = { enabled: boolean; intervalHours: number };
+type ImportBatch = { id: string; startedAt: string; endsAt: string; intervalHours: number };
 
 @Injectable()
 export class JobPoolService implements OnApplicationBootstrap, OnModuleDestroy {
@@ -35,17 +40,59 @@ export class JobPoolService implements OnApplicationBootstrap, OnModuleDestroy {
   private available(now = new Date()): Prisma.JobPoolJobWhereInput {
     return { hidden: false, isActive: true, isSoftware: true, workArrangement: 'REMOTE', lastSeenAt: { gte: new Date(now.getTime() - 30 * DAY) }, OR: [{ expiresAt: null }, { expiresAt: { gt: now } }] };
   }
-  private async settings(): Promise<PoolSettings> {
-    const row = await this.prisma.systemSetting.findUnique({ where: { key: SETTINGS_KEY } });
+  private async settings(db: Pick<Prisma.TransactionClient, 'systemSetting'> = this.prisma): Promise<PoolSettings> {
+    const row = await db.systemSetting.findUnique({ where: { key: SETTINGS_KEY } });
     try { const data = JSON.parse(row?.value || '{}'); return { enabled: data.enabled === true, intervalHours: [1, 6, 12, 24].includes(data.intervalHours) ? data.intervalHours : 6 }; }
     catch { return { enabled: false, intervalHours: 6 }; }
   }
-  async manage(user: AuthUser) {
+  private async latestImport(): Promise<ImportBatch | null> {
+    const row = await this.prisma.systemSetting.findUnique({ where: { key: LATEST_IMPORT_KEY } });
+    return row ? JSON.parse(row.value) : null;
+  }
+  private async tagAddition(tx: Prisma.TransactionClient, jobId: string) {
+    const { intervalHours } = await this.settings(tx), now = new Date();
+    const candidate: ImportBatch = { id: randomUUID(), startedAt: now.toISOString(), endsAt: new Date(now.getTime() + intervalHours * MIN_SYNC_MS).toISOString(), intervalHours };
+    // Only actual inserts enter here. PostgreSQL serializes this shared row,
+    // so concurrent lanes/processes join one durable interval without resetting
+    // it on empty imports, restarts, retries or updates of existing URLs.
+    const [row] = await tx.$queryRaw<{ value: string }[]>`INSERT INTO "system_settings" ("id", "key", "value", "updatedAt")
+      VALUES (${randomUUID()}, ${LATEST_IMPORT_KEY}, ${JSON.stringify(candidate)}, ${now})
+      ON CONFLICT ("key") DO UPDATE SET
+        "value" = CASE WHEN ("system_settings"."value"::jsonb->>'endsAt')::timestamptz <= ${now}
+          OR ("system_settings"."value"::jsonb->>'intervalHours')::int <> ${intervalHours}
+          THEN EXCLUDED."value" ELSE "system_settings"."value" END,
+        "updatedAt" = EXCLUDED."updatedAt"
+      RETURNING "value"`;
+    const batch: ImportBatch = JSON.parse(row.value);
+    return tx.jobPoolJob.update({ where: { id: jobId }, data: { addedBatchId: batch.id } });
+  }
+  private async saveImportedJob(create: Prisma.JobPoolJobUncheckedCreateInput, update: Prisma.JobPoolJobUncheckedUpdateInput) {
+    return this.prisma.$transaction(async tx => {
+      const id = randomUUID();
+      const job = await tx.jobPoolJob.upsert({ where: { canonicalUrl: create.canonicalUrl }, create: { ...create, id }, update });
+      return job.id === id ? this.tagAddition(tx, id) : job;
+    });
+  }
+  async manage(user: AuthUser, summary = false) {
     this.master(user);
-    const [settings, sources] = await Promise.all([this.settings(), this.prisma.jobPoolSource.findMany({ orderBy: [{ provider: 'asc' }, { name: 'asc' }] })]);
-    return { settings, providers: JOB_PROVIDERS.map(provider => ({ ...provider, configured: this.configured(provider.id) })),
-      sources: sources.map(({ lockedUntil, ...source }) => ({ ...source, running: !!lockedUntil && lockedUntil > new Date(), configured: this.configured(source.provider),
-        nextManualSyncAt: source.lastAttemptAt ? new Date(source.lastAttemptAt.getTime() + MIN_SYNC_MS) : null })) };
+    const [settings, sources, jobGroups] = await Promise.all([this.settings(), this.prisma.jobPoolSource.findMany({ orderBy: [{ provider: 'asc' }, { name: 'asc' }] }),
+      this.prisma.jobPoolJob.groupBy({ by: ['eligibleCountries', 'sourceId'], where: this.available(), _count: { _all: true } })]);
+    const coverage = POOL_COUNTRIES.map(country => {
+      const monitored = sources.filter(source => source.enabled && this.configured(source.provider) && sourceCountries(source).includes(country));
+      const matches = jobGroups.filter(group => group.eligibleCountries.includes(country));
+      return { country, name: COUNTRY_NAMES[country], target: 10_000, monitoredSources: monitored.length,
+        successfullyReadSources: monitored.filter(source => !!source.lastSyncedAt).length,
+        matchingSources: new Set(matches.map(group => group.sourceId).filter(Boolean)).size,
+        availableJobs: matches.reduce((total, group) => total + group._count._all, 0) };
+    });
+    const now = new Date(), active = sources.filter(source => source.enabled && this.configured(source.provider));
+    const runningSources = sources.filter(source => !!source.lockedUntil && source.lockedUntil > now).length;
+    const sourceStats = { totalSources: sources.length, enabledSources: active.length, checkedSources: active.filter(source => !!source.lastAttemptAt).length,
+      matchingSources: active.filter(source => source.lastCount > 0).length, pendingSources: active.filter(source => !source.lastAttemptAt).length,
+      runningSources, retrySources: active.filter(source => !!source.lastError).length, importing: runningSources > 0 || sources.some(source => source.queued) };
+    return { settings, coverage, sourceStats, sourceTarget: 30_000, providers: JOB_PROVIDERS.map(provider => ({ ...provider, configured: this.configured(provider.id) })),
+      ...(!summary ? { sources: sources.map(({ lockedUntil, ...source }) => ({ ...source, running: !!lockedUntil && lockedUntil > now, configured: this.configured(source.provider),
+        nextManualSyncAt: source.lastAttemptAt ? new Date(source.lastAttemptAt.getTime() + MIN_SYNC_MS) : null })) } : {}) };
   }
   async updateSettings(user: AuthUser, body: Record<string, unknown>) {
     this.master(user); const settings = await this.settings();
@@ -71,6 +118,9 @@ export class JobPoolService implements OnApplicationBootstrap, OnModuleDestroy {
     if (provider.board && !/^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,99}$/.test(boardToken)) throw new BadRequestException('Enter the company board name only, such as airbnb, not a URL.');
     if (provider.id.startsWith('freehire') && !FREEHIRE_SOURCES.includes(boardToken as typeof FREEHIRE_SOURCES[number])) throw new BadRequestException('Choose one of the supported employer feeds.');
     if (provider.id === 'remotejobs' && !REMOTEJOBS_CATEGORIES.includes(boardToken as typeof REMOTEJOBS_CATEGORIES[number])) throw new BadRequestException('Choose a supported RemoteJobs.org software category.');
+    if (provider.id === 'jobicy' && !['usa', 'uk', 'ireland', 'anywhere'].includes(boardToken)) throw new BadRequestException('Choose a supported Jobicy country.');
+    if (['workable', 'recruitee', 'breezy', 'pinpoint'].includes(provider.id) && !/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,99}$/.test(boardToken)) throw new BadRequestException('Enter a valid employer subdomain.');
+    if (PUBLIC_CAREER_PROVIDERS.includes(provider.id) && !validCareerBoard(provider.id, boardToken)) throw new BadRequestException('Enter a valid public employer board name.');
     const name = plainText(body.name, 120) || (provider.id.startsWith('freehire') ? `${boardToken} via Freehire${provider.id === 'freehire-global' ? ' · worldwide' : ''}` : provider.board ? boardToken : provider.name);
     try { return await this.prisma.jobPoolSource.create({ data: { provider: provider.id, name, boardToken } }); }
     catch (error) { if ((error as { code?: string }).code === 'P2002') throw new BadRequestException('This source is already added.'); throw error; }
@@ -121,10 +171,19 @@ export class JobPoolService implements OnApplicationBootstrap, OnModuleDestroy {
       ...(settings.enabled ? {} : { queued: true }), OR: [{ lockedUntil: null }, { lockedUntil: { lte: now } }] }, orderBy: { nextSyncAt: 'asc' }, take: 1000 });
     if (!sources.length) return;
     const before = await this.prisma.jobPoolJob.count({ where: this.available() });
+    // A new direct board may replace an aggregate-feed presentation URL. Load
+    // aliases once per batch so the existing job ID and applied marks survive.
+    const boardAliases = new Map<string, string>();
+    if (lane === 'boards' && sources.some(source => PUBLIC_CAREER_PROVIDERS.includes(source.provider))) {
+      const saved = await this.prisma.jobPoolJob.findMany({ where: { OR: ['recruiting.paylocity.com', '.jobs.personio.', '.bamboohr.com'].map(host => ({ jobUrl: { contains: host, mode: 'insensitive' as const } })) }, select: { jobUrl: true, canonicalUrl: true } });
+      for (const job of saved) boardAliases.set(poolJobIdentity(job.jobUrl), job.canonicalUrl);
+    }
     const stats = { checked: 0, processed: 0, retries: 0 };
     this.logger.log(`${lane === 'boards' ? 'Employer boards' : 'Aggregate feeds'}: checking ${sources.length} sources; ${before} jobs available.`);
     let index = 0;
-    await Promise.all(Array.from({ length: lane === 'boards' ? 4 : 2 }, async () => {
+    // Bound concurrency while allowing a large catalog to progress. Provider
+    // gates still limit new requests to four/second per provider in this process.
+    await Promise.all(Array.from({ length: lane === 'boards' ? 12 : 2 }, async () => {
       while (index < sources.length && !this.stopping) {
         const source = sources[index++]; if (!this.configured(source.provider)) continue;
         const started = new Date();
@@ -181,11 +240,12 @@ export class JobPoolService implements OnApplicationBootstrap, OnModuleDestroy {
                 }
               }
               if (contentMatch?.preferred) continue;
-              const canonicalUrl = aliases.get(identity) || contentMatch?.canonicalUrl || normalizedJobUrl(job.jobUrl)!;
+              const canonicalUrl = aliases.get(identity) || (PUBLIC_CAREER_PROVIDERS.includes(source.provider) ? boardAliases.get(identity) : undefined) || contentMatch?.canonicalUrl || normalizedJobUrl(job.jobUrl)!;
               const data = { ...job, canonicalUrl, sourceId: source.id, lastSeenAt: started, isSoftware: true, isActive: !job.expiresAt || job.expiresAt > started };
               const postedAt = job.publishedAt || started;
-              await this.prisma.jobPoolJob.upsert({ where: { canonicalUrl }, create: { ...data, postedAt }, update: { ...data, ...(job.publishedAt ? { postedAt } : {}) } });
+              await this.saveImportedJob({ ...data, postedAt }, { ...data, ...(job.publishedAt ? { postedAt } : {}) });
               aliases.set(identity, canonicalUrl);
+              if (PUBLIC_CAREER_PROVIDERS.includes(source.provider)) boardAliases.set(identity, canonicalUrl);
               if (group && !contentMatch) { const matches = contentMatches.get(group) || []; if (!matches.some(saved => saved.canonicalUrl === canonicalUrl)) matches.push({canonicalUrl, preferred: false}); contentMatches.set(group, matches); }
               count++;
             }
@@ -195,7 +255,7 @@ export class JobPoolService implements OnApplicationBootstrap, OnModuleDestroy {
             if (cursors.has(result.next)) throw new FeedError('Source repeated a page cursor. Imported jobs were kept.');
             cursors.add(result.next); cursor = result.next;
           }
-          if (complete && !this.stopping && ['greenhouse', 'lever', 'ashby', 'smartrecruiters', ...AGGREGATORS].includes(source.provider)) {
+          if (complete && !this.stopping && ['greenhouse', 'lever', 'ashby', 'workable', 'recruitee', 'breezy', 'pinpoint', 'smartrecruiters', ...PUBLIC_CAREER_PROVIDERS, ...AGGREGATORS].includes(source.provider)) {
             await this.prisma.jobPoolJob.updateMany({ where: { sourceId: source.id, lastSeenAt: { lt: started }, isActive: true }, data: { isActive: false } });
           }
           if (!complete) lastError = incomplete ? 'Some source postings have no description. Valid jobs were imported; older jobs were not closed.' : 'Import paused before the end of the feed. Imported jobs were kept; older jobs were not closed.';
@@ -219,9 +279,21 @@ export class JobPoolService implements OnApplicationBootstrap, OnModuleDestroy {
     const where: Prisma.JobPoolJobWhereInput = { ...this.available(availableAt), ...(user.role === 'MASTER' && query.includeHidden === 'true' ? { hidden: undefined } : {}) };
     if (query.q?.trim()) where.AND = [{ OR: ['title', 'company', 'location', 'description'].map(field => ({ [field]: { contains: query.q!.trim().slice(0, 200), mode: 'insensitive' } })) }];
     if (query.sourceId) where.sourceId = query.sourceId;
+    if (query.site) {
+      if (query.site === 'manual') where.sourceId = null;
+      else {
+        if (!JOB_PROVIDERS.some(provider => provider.id === query.site)) throw new BadRequestException('Choose a valid job site.');
+        where.source = { is: { provider: query.site } };
+      }
+    }
+    if (query.country && query.country !== 'all') {
+      const country = poolCountry(query.country);
+      if (!country) throw new BadRequestException('Choose United States, United Kingdom, Ireland or all countries.');
+      where.eligibleCountries = { has: country };
+    }
     if (query.days && query.days !== 'all') {
-      if (!['1', '3', '7', '14', '30'].includes(query.days)) throw new BadRequestException('Choose a valid posting date filter.');
-      where.postedAt = { gte: new Date(asOf.getTime() - Number(query.days) * DAY) };
+      if (!['1', '3', '7', '14', '30'].includes(query.days)) throw new BadRequestException('Choose a valid added date filter.');
+      where.createdAt = { gte: new Date(asOf.getTime() - Number(query.days) * DAY), lte: asOf };
     }
     const status = query.status || 'not-applied';
     if (!['all', 'applied', 'not-applied'].includes(status)) throw new BadRequestException('Choose a valid applied status.');
@@ -232,8 +304,8 @@ export class JobPoolService implements OnApplicationBootstrap, OnModuleDestroy {
     const now = new Date(), since = query.since && query.since.length <= 80 ? jobDate(query.since) : null;
     if (!since || since > now) throw new BadRequestException('Refresh the job list to check for new imports.');
     const where = this.jobFilters(user, query, now);
-    const [total, newCount] = await Promise.all([this.prisma.jobPoolJob.count({where}), this.prisma.jobPoolJob.count({where: {...where, createdAt: {gt: since, lte: now}}})]);
-    return {total, newCount, checkedAt: now.toISOString()};
+    const [total, newCount, latestImport] = await Promise.all([this.prisma.jobPoolJob.count({where}), this.prisma.jobPoolJob.count({where: {AND: [where, {createdAt: {gt: since, lte: now}}]}}), this.latestImport()]);
+    return {total, newCount, checkedAt: now.toISOString(), latestImport};
   }
   async list(user: AuthUser, query: Record<string, string | undefined>) {
     const limit = 20, now = new Date();
@@ -246,22 +318,33 @@ export class JobPoolService implements OnApplicationBootstrap, OnModuleDestroy {
       } catch { throw new BadRequestException('Invalid job cursor. Refresh the job list.'); }
     }
     const asOf = cursor ? new Date(cursor.asOf) : now;
-    const where = { ...this.jobFilters(user, query, asOf, now), createdAt: { lte: asOf } };
+    const where: Prisma.JobPoolJobWhereInput = { AND: [this.jobFilters(user, query, asOf, now), { createdAt: { lte: asOf } }] };
     const filters = (where.AND || []) as Prisma.JobPoolJobWhereInput[];
-    const pageWhere = cursor ? { ...where, AND: [...filters, { OR: [{ postedAt: { lt: new Date(cursor.at) } }, { postedAt: new Date(cursor.at), id: { lt: cursor.id } }] }] } : where;
-    const include = { appliedBy: { where: { userId: user.id }, select: { appliedAt: true } } };
-    const [jobs, total, sources] = await Promise.all([
-      this.prisma.jobPoolJob.findMany({ where: pageWhere, take: limit + 1, orderBy: [{ postedAt: 'desc' }, { id: 'desc' }], include }),
-      this.prisma.jobPoolJob.count({ where }), this.prisma.jobPoolSource.findMany({ select: { id: true, name: true, provider: true }, orderBy: { name: 'asc' } }),
+    const pageWhere = cursor ? { ...where, AND: [...filters, { OR: [{ createdAt: { lt: new Date(cursor.at) } }, { createdAt: new Date(cursor.at), id: { lt: cursor.id } }] }] } : where;
+    const include = { appliedBy: { where: { userId: user.id }, select: { appliedAt: true } }, viewedBy: { where: { userId: user.id }, select: { viewedAt: true } } };
+    const [jobs, total, latestImport] = await Promise.all([
+      this.prisma.jobPoolJob.findMany({ where: pageWhere, take: limit + 1, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }], include }),
+      this.prisma.jobPoolJob.count({ where }),
+      this.latestImport(),
     ]);
     const visible = jobs.slice(0, limit), last = visible.at(-1);
-    return { asOf: asOf.toISOString(), jobs: visible.map(({ appliedBy, ...job }) => ({ ...job, applied: appliedBy.length > 0, appliedAt: appliedBy[0]?.appliedAt || null, description: job.description.slice(0, 280) })), total,
-      nextCursor: jobs.length > limit && last ? Buffer.from(JSON.stringify({ at: last.postedAt.toISOString(), id: last.id, asOf: asOf.toISOString() })).toString('base64url') : null, sources };
+    const matches = await this.applications.matchingCompanies(user, visible.map(job => job.company));
+    return { asOf: asOf.toISOString(), latestImport, jobs: visible.map(({ appliedBy, viewedBy, description, ...job }) => ({ ...job, companyMatches: matches[job.company.toLowerCase().replace(/\s/g, '')] || [], applied: appliedBy.length > 0, appliedAt: appliedBy[0]?.appliedAt || null, viewed: viewedBy.length > 0, viewedAt: viewedBy[0]?.viewedAt || null })), total,
+      nextCursor: jobs.length > limit && last ? Buffer.from(JSON.stringify({ at: last.createdAt.toISOString(), id: last.id, asOf: asOf.toISOString() })).toString('base64url') : null,
+      sites: [...JOB_PROVIDERS.map(({id, name}) => ({id, name})), {id: 'manual', name: 'Added by Master'}] };
   }
   async detail(id: string, user: AuthUser) {
-    const job = await this.prisma.jobPoolJob.findFirst({ where: { id, ...(user.role === 'MASTER' ? { workArrangement: 'REMOTE', isSoftware: true } : this.available()) }, include: { appliedBy: { where: { userId: user.id }, select: { appliedAt: true } } } });
+    const job = await this.prisma.jobPoolJob.findFirst({ where: { id, ...(user.role === 'MASTER' ? { workArrangement: 'REMOTE', isSoftware: true } : this.available()) }, include: { appliedBy: { where: { userId: user.id }, select: { appliedAt: true } }, viewedBy: { where: { userId: user.id }, select: { viewedAt: true } } } });
     if (!job) throw new NotFoundException('This job is no longer available.');
-    const { appliedBy, ...data } = job; return { ...data, applied: appliedBy.length > 0, appliedAt: appliedBy[0]?.appliedAt || null };
+    const { appliedBy, viewedBy, ...data } = job;
+    const matches = await this.applications.matchingCompanies(user, [job.company]);
+    return { ...data, companyMatches: matches[job.company.toLowerCase().replace(/\s/g, '')] || [], applied: appliedBy.length > 0, appliedAt: appliedBy[0]?.appliedAt || null, viewed: viewedBy.length > 0, viewedAt: viewedBy[0]?.viewedAt || null };
+  }
+  async markViewed(user: AuthUser, id: string) {
+    const job = await this.prisma.jobPoolJob.findFirst({ where: { id, ...(user.role === 'MASTER' ? { workArrangement: 'REMOTE', isSoftware: true } : this.available()) }, select: { id: true } });
+    if (!job) throw new NotFoundException('This job is no longer available.');
+    const row = await this.prisma.jobPoolViewed.upsert({ where: { userId_jobId: { userId: user.id, jobId: id } }, create: { userId: user.id, jobId: id }, update: {} });
+    return { viewed: true as const, viewedAt: row.viewedAt };
   }
   async markApplied(user: AuthUser, id: string, body: Record<string, unknown>) {
     if (typeof body.applied !== 'boolean') throw new BadRequestException('Choose whether you have applied to this job.');
@@ -275,16 +358,17 @@ export class JobPoolService implements OnApplicationBootstrap, OnModuleDestroy {
   }
   async addJob(user: AuthUser, body: Record<string, unknown>) {
     this.master(user);
-    if (body.workArrangement !== undefined && body.workArrangement !== 'REMOTE') throw new BadRequestException('Only remote US jobs can be published in the Job Pool.');
+    if (body.workArrangement !== undefined && body.workArrangement !== 'REMOTE') throw new BadRequestException('Only remote jobs can be published in the Job Pool.');
     const title = plainText(body.title, 250), company = plainText(body.company, 250), location = plainText(body.location, 1000), description = plainText(body.description);
     const jobUrl = publicJobUrl(body.jobUrl);
-    if (!title || !company || !description || !jobUrl || !isUsLocation(location)) throw new BadRequestException('Enter a title, company, US location, description and a valid public HTTP or HTTPS job URL.');
+    const countries = eligibleCountries(location, undefined, description);
+    if (!title || !company || !description || !jobUrl || !countries.length) throw new BadRequestException('Enter a title, company, eligible US, UK or Ireland location, description and a valid public HTTP or HTTPS job URL.');
     if (!isSoftwareJob(title, description)) throw new BadRequestException('Only software jobs can be published. Use a specific software, development, data, QA, cloud or DevOps job title.');
     const expiresAt = body.expiresAt ? jobDate(body.expiresAt) : new Date(Date.now() + 30 * DAY);
     if (!expiresAt || expiresAt <= new Date()) throw new BadRequestException('Choose an expiration date in the future.');
     const canonicalUrl = normalizedJobUrl(jobUrl)!;
-    try { return await this.prisma.jobPoolJob.create({ data: { externalId: canonicalUrl, canonicalUrl, title, company, location, description, jobUrl,
-      sourceName: 'Added by Master', publishedAt: new Date(), postedAt: new Date(), isSoftware: true, expiresAt, workArrangement: 'REMOTE' } }); }
+    try { return await this.prisma.$transaction(async tx => { const job = await tx.jobPoolJob.create({ data: { externalId: canonicalUrl, canonicalUrl, title, company, location, eligibleCountries: countries, description, jobUrl,
+      sourceName: 'Added by Master', publishedAt: new Date(), postedAt: new Date(), isSoftware: true, expiresAt, workArrangement: 'REMOTE' } }); return this.tagAddition(tx, job.id); }); }
     catch (error) { if ((error as { code?: string }).code === 'P2002') throw new BadRequestException('This job link is already in the Job Pool.'); throw error; }
   }
   async hide(user: AuthUser, id: string, body: Record<string, unknown>) {

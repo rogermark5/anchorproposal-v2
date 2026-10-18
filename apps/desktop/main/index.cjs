@@ -116,7 +116,7 @@ function installHandlers() {
     const serialized = body === undefined ? undefined : JSON.stringify(body);
     if (serialized?.length > 1000000) throw new Error('This request is too large.');
     const result = await auth.request(route, { method, body: serialized, signal: AbortSignal.timeout(/answers|export/.test(route) ? 180000 : 30000) });
-    if (method !== 'GET') send({ type: 'data-changed', route });
+    if (method !== 'GET' && route !== '/applications/validate') send({ type: 'data-changed', route });
     return result;
   });
   handle('publicRequest', async (_win, route) => {
@@ -131,6 +131,7 @@ function installHandlers() {
   handle('settings', saveSettings);
   handle('window', async (win, action) => {
     if (action === 'hide') win.hide();
+    else if (action === 'close') { if (win === quickWindow) setImmediate(() => { if (!win.isDestroyed()) win.close(); }); else win.hide(); }
     else if (action === 'minimize') win.minimize();
     else if (action === 'maximize' && win === window) win.isMaximized() ? win.unmaximize() : win.maximize();
     else if (action === 'new') await showQuick();
@@ -178,7 +179,8 @@ function makeWindow(quick) {
   });
   win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   win.webContents.on('will-navigate', event => event.preventDefault());
-  win.on('close', event => { if (!quitting) { event.preventDefault(); win.hide(); } });
+  win.on('close', event => { if (!quick && !quitting) { event.preventDefault(); win.hide(); } });
+  if (quick) win.on('closed', () => { quickWindow = null; quickLoading = undefined; });
   return win;
 }
 async function boot() {

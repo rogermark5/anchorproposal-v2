@@ -12,7 +12,7 @@ const payload = (rows, total = rows.length, offset = 0) => ({ data: rows, meta: 
 test('Freehire uses only public, filtered employer feeds and keeps full descriptions and original links', async () => {
   const result = await fetchJobPage(source, null, async (url, headers) => {
     assert.equal(url.origin, 'https://freehire.me'); assert.equal(url.pathname, '/api/v1/agent/jobs/search');
-    assert.equal(url.searchParams.get('source'), 'workday'); assert.equal(url.searchParams.get('countries'), 'US');
+    assert.equal(url.searchParams.get('source'), 'workday'); assert.equal(url.searchParams.get('countries'), 'US,GB,IE');
     assert.equal(url.searchParams.get('work_mode'), 'remote'); assert.equal(url.searchParams.get('limit'), '100');
     assert.equal(url.searchParams.get('description_format'), 'text'); assert.deepEqual(headers, {});
     return payload([row()]);
@@ -58,8 +58,9 @@ test('Freehire rejects malformed pagination, ignored filters and requests beyond
 test('Structured US eligibility resolves generic remote labels without accepting conflicting locations', async () => {
   const labels = ['Remote', 'Any Location / Remote', 'Remote (Any State)', 'Remote - TX', 'MN - Remote', 'USA_Remote'];
   const result = await fetchJobPage(source, null, async () => payload([...labels.map(location => row({ location })), row({ location: 'Remote', countries: ['ca'] }), row({ location: 'Remote - UK' }), row({ location: 'Remote - Worldwide', countries:['gb'] }), row({ location: 'Berlin' })]));
-  assert.equal(result.jobs.length, labels.length);
-  for (const job of result.jobs) assert.ok(/United States|USA/.test(job.location));
+  assert.equal(result.jobs.length, labels.length + 1);
+  for (const job of result.jobs.slice(0, labels.length)) assert.deepEqual(job.eligibleCountries, ['US']);
+  assert.deepEqual(result.jobs.at(-1).eligibleCountries, ['GB']);
 });
 
 test('Worldwide employer feeds require explicit unrestricted locations and reject vague or conflicting eligibility', async () => {
@@ -69,7 +70,9 @@ test('Worldwide employer feeds require explicit unrestricted locations and rejec
     assert.equal(url.searchParams.get('regions'),'global');assert.equal(url.searchParams.has('countries'),false);
     return payload([...accepted.map(location=>row({location,countries:[]})),...rejected.map(location=>row({location,countries:[]})),row({location:'Worldwide',countries:['gb']}),row({location:'Worldwide',countries:[],description:'Applicants outside the US only.'})]);
   });
-  assert.deepEqual(result.jobs.map(job=>job.location),accepted);
+  assert.deepEqual(result.jobs.map(job=>job.location),[...accepted, 'Worldwide', 'Worldwide']);
+  assert.deepEqual(result.jobs.at(-2).eligibleCountries, ['GB']);
+  assert.deepEqual(result.jobs.at(-1).eligibleCountries, ['GB', 'IE']);
 });
 
 test('Independent employer feeds stop at their own last page and cannot follow another feed cursor', async () => {

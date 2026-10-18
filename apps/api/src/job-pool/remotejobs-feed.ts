@@ -1,5 +1,6 @@
 // Public, keyless API and redistribution instructions:
 // https://remotejobs.org/developers/api
+import { POOL_COUNTRIES, PoolCountry } from './job-geography';
 export const REMOTEJOBS_CATEGORIES = ['programming', 'devops', 'data-science', 'ai-machine-learning', 'cybersecurity', 'cyber-security', 'quality-assurance'] as const;
 export const REMOTEJOBS_MAX_PAGES = 200;
 
@@ -16,6 +17,16 @@ export function remotejobsEligibility(row: Record<string, any>): 'us' | 'worldwi
   if (applicant.scope === 'worldwide' && applicant.worldwide_permission_verified === true &&
     !applicant.allowed_countries?.length && !applicant.allowed_regions?.length && !applicant.excluded_subdivisions?.length) return 'worldwide';
   return null;
+}
+
+export function remotejobsCountries(row: Record<string, any>): PoolCountry[] {
+  const applicant: Geography = row.applicant_location_requirements || row.location_normalization || {};
+  const location: Geography = row.location_normalization || {};
+  if (applicant.status !== 'known' || applicant.work_arrangement !== 'remote' || (Array.isArray(applicant.unresolved) && applicant.unresolved.length)) return [];
+  const matches = (values: unknown, code: string) => Array.isArray(values) && values.some(value => typeof value === 'string' && new RegExp(`^${code}(?:-|$)`, 'i').test(value));
+  const worldwide = applicant.scope === 'worldwide' && applicant.worldwide_permission_verified === true && !applicant.allowed_countries?.length && !applicant.allowed_regions?.length && !applicant.excluded_subdivisions?.length;
+  return POOL_COUNTRIES.filter(code => !matches(applicant.excluded_countries, code) && !matches(location.excluded_countries, code) &&
+    (worldwide || matches(applicant.allowed_countries, code) || matches(applicant.allowed_subdivisions, code)));
 }
 
 export function remotejobsUrl(board: string, cursor: string | null): URL {

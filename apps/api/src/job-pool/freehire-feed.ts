@@ -28,7 +28,7 @@ export function freehireCursor(cursor: string | null, board = ''): { index: numb
 export function freehireUrl(cursor: string | null, board = '', worldwide = false): URL {
   const { index, offset } = freehireCursor(cursor, board);
   const url = new URL('https://freehire.me/api/v1/agent/jobs/search');
-  url.search = new URLSearchParams({ source: FREEHIRE_SOURCES[index], ...(worldwide ? { regions: 'global' } : { countries: 'US' }), work_mode: 'remote',
+  url.search = new URLSearchParams({ source: FREEHIRE_SOURCES[index], ...(worldwide ? { regions: 'global' } : { countries: 'US,GB,IE' }), work_mode: 'remote',
     category: CATEGORIES, description_format: 'text', limit: '100', offset: String(offset), sort: 'created_at', order: 'desc' }).toString();
   return url;
 }

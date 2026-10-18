@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { ClipboardPaste, Check, LoaderCircle, Plus, Sparkles, AlertTriangle, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { ApplicationFormFields } from '../../web/src/components/application-form-fields';
+import { useApplicationValidation } from '../../web/src/lib/use-application-validation';
 import { ManualGenerationDialog } from '../../web/src/components/manual-generation-dialog';
 import { api, type ApplicationOption } from '../../web/src/lib/api';
 import { useAuth } from './auth-context';
@@ -12,6 +13,7 @@ const active = (job: Job | null) => !!job && ['connecting', 'generating', 'savin
 export default function QuickApplication() {
   const { user, canBid, isAdmin } = useAuth();
   const [form, setForm] = useState(blank);
+  const draftValidation = useApplicationValidation(form);
   const [profiles, setProfiles] = useState<any[]>([]); const [templates, setTemplates] = useState<any[]>([]);
   const [options, setOptions] = useState<{ locations: ApplicationOption[]; sources: ApplicationOption[] }>({ locations: [], sources: [] });
   const [loading, setLoading] = useState(true); const [busy, setBusy] = useState(false); const [error, setError] = useState('');
@@ -72,6 +74,7 @@ export default function QuickApplication() {
     else setJob(await window.anchor.generate({ applicationId: application.id, templateId: form.templateId || undefined, title: `${application.jobTitle} · ${application.company}` }));
   };
   const submit = (saveOnly = false) => run(async () => {
+    if (!draftValidation.canSave) throw new Error("Review the job description validation before creating an application.");
     if (!form.profileId || !form.jobTitle.trim() || !form.company.trim() || !form.jobDescription.trim()) throw new Error('Profile, job title, company, and job description are required.');
     if (!saveOnly && !form.templateId) throw new Error('Choose a resume template.');
     const { templateId, noJobLink, ...data } = form;
@@ -106,10 +109,10 @@ export default function QuickApplication() {
             <label htmlFor="quick-template">Template<select id="quick-template" value={form.templateId} onChange={event => setForm(f => ({ ...f, templateId: event.target.value }))}><option value="">Select template…</option>{templates.map(template => <option key={template.id} value={template.id}>{template.name}{template.isDefault ? ' (Default)' : ''}</option>)}</select></label>
           </div>
           {!loading && profiles.length === 0 && <p className="native-hint">No profiles are available for this account. <button type="button" onClick={() => void window.anchor.openRoute('/profiles')}>Manage profiles</button></p>}
-          <ApplicationFormFields form={form} setForm={setForm} profiles={profiles} templates={templates} showProfileSelect={false} locations={options.locations} sources={options.sources} onOptionsChange={loadOptions}/>
+          <ApplicationFormFields form={form} setForm={setForm} profiles={profiles} templates={templates} showProfileSelect={false} locations={options.locations} sources={options.sources} onOptionsChange={loadOptions} validation={draftValidation}/>
         </fieldset>
         <div className="quick-generation-mode"><button type="button" className={mode === 'automatic' ? 'selected' : ''} onClick={() => setMode('automatic')}><Sparkles size={15}/> Automatic</button><button type="button" className={mode === 'manual' ? 'selected' : ''} onClick={() => setMode('manual')}>Manual JSON</button></div>
-        <footer className="quick-footer"><button type="button" className="native-secondary" disabled={busy || loading || user?.canCreateApplications === false} onClick={() => void submit(true)}>Save only</button><button className="native-primary" disabled={busy || loading || user?.canCreateApplications === false || user?.canGenerateResumes === false}>{busy ? <LoaderCircle size={16} className="native-spin"/> : <Sparkles size={16}/>} {mode === 'manual' ? 'Prepare prompt' : 'Create & generate'}<kbd>Ctrl ↵</kbd></button></footer>
+        <footer className="quick-footer"><button type="button" className="native-secondary" disabled={busy || loading || !draftValidation.canSave || user?.canCreateApplications === false} onClick={() => void submit(true)}>Save only</button><button className="native-primary" disabled={busy || loading || !draftValidation.canSave || user?.canCreateApplications === false || user?.canGenerateResumes === false}>{busy ? <LoaderCircle size={16} className="native-spin"/> : <Sparkles size={16}/>} {mode === 'manual' ? 'Prepare prompt' : 'Create & generate'}<kbd>Ctrl ↵</kbd></button></footer>
       </form>
     </>}
     {review && <div className="quick-overlay"><section role="dialog" aria-modal="true" aria-label="Review warnings" className="quick-dialog"><AlertTriangle className="warning-symbol"/><h2>Review before generating</h2>{review.warnings.map((warning, index) => <p key={index}>{warning}</p>)}{review.blocked && <p role="alert">Resolve blocked warnings or obtain admin approval in the application details before generating.</p>}<div className="native-actions"><button className="native-secondary" onClick={() => setReview(null)}>Cancel</button>{review.blocked ? <button className="native-primary" onClick={() => void window.anchor.openRoute(`/applications/${review.app.id}`)}>Open application</button> : <button className="native-primary" disabled={busy} onClick={() => void run(async () => { const application = review.app; setReview(null); await begin(application); })}>Continue</button>}</div></section></div>}

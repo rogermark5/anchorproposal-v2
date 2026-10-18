@@ -1,14 +1,24 @@
 import { WorkArrangement } from '@prisma/client';
 import { isSoftwareJob, mayBeSoftwareJob } from './software-jobs';
 import { freehireCursor, FREEHIRE_SOURCES, freehireNext, freehireUrl } from './freehire-feed';
-import { REMOTEJOBS_CATEGORIES, remotejobsEligibility, remotejobsUrl } from './remotejobs-feed';
+import { REMOTEJOBS_CATEGORIES, remotejobsCountries, remotejobsUrl } from './remotejobs-feed';
+import { eligibleCountries, COUNTRY_NAMES, POOL_COUNTRIES, PoolCountry, poolCountry, unrestrictedWorldwide } from './job-geography';
+import { parseCareerResponse, PUBLIC_CAREER_PROVIDERS, schemaJobLocations, validCareerBoard } from './public-career-feeds';
 
 export const JOB_PROVIDERS = [
-  { id: 'jobicy', name: 'Jobicy', board: false, docs: 'https://github.com/Jobicy/remote-jobs-api' },
+  { id: 'jobicy', name: 'Jobicy', board: true, choices: ['usa', 'uk', 'ireland', 'anywhere'], docs: 'https://github.com/Jobicy/remote-jobs-api' },
   { id: 'remoteok', name: 'Remote OK', board: false, docs: 'https://remoteok.com/api' },
   { id: 'greenhouse', name: 'Greenhouse', board: true, docs: 'https://docs.greenhouse.io/job-board.html' },
   { id: 'lever', name: 'Lever', board: true, docs: 'https://github.com/lever/postings-api' },
   { id: 'ashby', name: 'Ashby', board: true, docs: 'https://developers.ashbyhq.com/docs/public-job-posting-api' },
+  { id: 'workable', name: 'Workable', board: true, docs: 'https://help.workable.com/hc/en-us/articles/115012771647-Using-the-Workable-API-to-create-a-careers-page' },
+  { id: 'recruitee', name: 'Recruitee', board: true, docs: 'https://support.recruitee.com/en/articles/8213076-faq-api' },
+  { id: 'breezy', name: 'Breezy HR', board: true, docs: 'https://help.breezy.hr/en/articles/9237171-working-with-positions' },
+  { id: 'pinpoint', name: 'Pinpoint', board: true, docs: 'https://developers.pinpointhq.com/docs/jobs-json-endpoint' },
+  { id: 'personio', name: 'Personio', board: true, docs: 'https://developer.personio.de/v1.0/reference/get_xml' },
+  { id: 'teamtailor', name: 'Teamtailor', board: true, docs: 'https://support.teamtailor.com/en/articles/11171756-rss-feed-how-to-guide' },
+  { id: 'bamboohr', name: 'BambooHR', board: true, docs: 'https://documentation.bamboohr.com/reference/create-job-opening' },
+  { id: 'paylocity', name: 'Paylocity public careers', board: true, docs: 'https://recruiting.paylocity.com/' },
   { id: 'smartrecruiters', name: 'SmartRecruiters', board: true, docs: 'https://developers.smartrecruiters.com/docs/endpoints' },
   { id: 'usajobs', name: 'USAJOBS', board: false, docs: 'https://developer.usajobs.gov/' },
   { id: 'freehire', name: 'Freehire · employer feeds', board: true, choices: FREEHIRE_SOURCES, docs: 'https://freehire.me/docs/api' },
@@ -18,8 +28,21 @@ export const JOB_PROVIDERS = [
 ] as const;
 export type ProviderId = typeof JOB_PROVIDERS[number]['id'];
 export type ImportSource = { provider: string; name: string; boardToken: string };
+// This is adapter search capability, not evidence of current hiring in a country.
+// Employer boards are shared: a board is fetched once and its jobs are classified.
+export function sourceCountries(source: Pick<ImportSource, 'provider' | 'boardToken'>): readonly PoolCountry[] {
+  if (!JOB_PROVIDERS.some(provider => provider.id === source.provider)) return [];
+  if (source.provider === 'usajobs') return ['US'];
+  if (source.provider === 'jobicy') {
+    if (source.boardToken === 'uk') return ['GB'];
+    if (source.boardToken === 'ireland') return ['IE'];
+    if (source.boardToken === 'anywhere') return POOL_COUNTRIES;
+    return !source.boardToken || source.boardToken === 'usa' ? ['US'] : [];
+  }
+  return POOL_COUNTRIES;
+}
 export type ImportedJob = {
-  externalId: string; jobUrl: string; title: string; company: string; location: string;
+  externalId: string; jobUrl: string; title: string; company: string; location: string; eligibleCountries: PoolCountry[];
   description: string; workArrangement: WorkArrangement; sourceName: string;
   salary: string | null; employmentType: string | null; publishedAt: Date | null; expiresAt: Date | null;
 };
@@ -107,20 +130,20 @@ function convert(source: ImportSource, row: Row): ImportedJob | null {
   let data: Row;
   switch (source.provider) {
     case 'remotejobs': {
-      const eligibility = remotejobsEligibility(row);
+      const countries = remotejobsCountries(row);
       const link = publicJobUrl(row.apply_url);
-      if (!eligibility || !link || new URL(link).hostname !== 'remotejobs.org' || !new URL(link).pathname.startsWith('/remote-jobs/')) return null;
+      if (!countries.length || !link || new URL(link).hostname !== 'remotejobs.org' || !new URL(link).pathname.startsWith('/remote-jobs/')) return null;
       const location = plainText(row.location, 900);
       if (['HYBRID', 'ONSITE'].includes(arrangement(location))) return null;
       data = { externalId: row.id, jobUrl: link, title: row.title, company: row.company?.name,
-        location: eligibility === 'worldwide' ? 'Worldwide · United States eligible' : isUsLocation(location) ? location : `${location || 'Remote'} · United States eligible`,
+        location: location || `Remote · ${countries.map(code => COUNTRY_NAMES[code]).join(', ')}`, eligibleCountries: countries,
         description: row.description, workArrangement: 'REMOTE', sourceName: 'RemoteJobs.org', publishedAt: row.posted_at,
         salary: row.salary_text, employmentType: row.type };
       break;
     }
     case 'ocean': {
       const seen = jobDate(row.last_seen);
-      if (row.closed_at || row.confidence !== 'verified' || row.workplace_type !== 'remote' || !isUsLocation(row.location) ||
+      if (row.closed_at || row.confidence !== 'verified' || row.workplace_type !== 'remote' || !eligibleCountries(row.location).length ||
         ['HYBRID', 'ONSITE'].includes(arrangement(row.location)) || !seen || seen.getTime() < Date.now() - 7 * 86400_000 || seen.getTime() > Date.now() + 86400_000) return null;
       data = { externalId: row.id, jobUrl: row.url, title: row.title, company: row.company_name || row.company_domain,
         location: row.location, description: row.description, workArrangement: 'REMOTE', sourceName: `Ocean of Jobs · ${plainText(row.ats, 40) || 'employer'}`,
@@ -129,22 +152,20 @@ function convert(source: ImportSource, row: Row): ImportedJob | null {
     }
     case 'freehire':
     case 'freehire-global': {
-      // Keep explicit US eligibility and the upstream workplace designation.
-      // Do not infer eligibility from a US employer or an enrichment summary.
-      const usCountry = Array.isArray(row.countries) && row.countries.some((country: unknown) => typeof country === 'string' && /^us$/i.test(country));
-      const worldwide = isExplicitWorldwide(row.location) && Array.isArray(row.countries) && (!row.countries.length || usCountry);
-      if (!FREEHIRE_SOURCES.includes(row.source) || row.closed_at || row.work_mode !== 'remote' || (!usCountry && !worldwide) ||
+      const structured = Array.isArray(row.countries) ? row.countries.map(poolCountry).filter((code: PoolCountry | null): code is PoolCountry => !!code) : [];
+      const worldwide = unrestrictedWorldwide(row.location) && Array.isArray(row.countries) && !row.countries.length;
+      if (!FREEHIRE_SOURCES.includes(row.source) || row.closed_at || row.work_mode !== 'remote' || (!structured.length && !worldwide) ||
         ['HYBRID', 'ONSITE'].includes(arrangement(row.location))) return null;
-      // A structured US country is valid evidence when the display label is
-      // only Remote. Worldwide locations must explicitly include US applicants.
       const rawLocation = plainText(row.location, 1000);
-      const genericUsRemote = genericRemoteLabel(rawLocation);
-      if (!isUsLocation(rawLocation) && !genericUsRemote && !worldwide) return null;
+      const generic = genericRemoteLabel(rawLocation);
+      const located = eligibleCountries(rawLocation);
+      const countries = worldwide ? [...POOL_COUNTRIES] : structured.filter((code: PoolCountry) => generic || located.includes(code));
+      if (!countries.length) return null;
       const seen = jobDate(row.last_seen_at);
       if (!seen || seen.getTime() < Date.now() - 7 * 86400_000 || seen.getTime() > Date.now() + 86400_000) return null;
       const link = publicJobUrl(row.url);
       if (!link || /(^|\.)(?:himalayas\.app|remotive\.com|remotive\.io|freehire\.me)$/i.test(new URL(link).hostname)) return null;
-      data = { externalId: row.public_slug, jobUrl: link, title: row.title, company: row.company, location: genericUsRemote ? `${rawLocation} · United States` : rawLocation,
+      data = { externalId: row.public_slug, jobUrl: link, title: row.title, company: row.company, location: generic ? `${rawLocation} · ${countries.map((code: PoolCountry) => COUNTRY_NAMES[code]).join(', ')}` : rawLocation, eligibleCountries: countries,
         description: row.description, workArrangement: 'REMOTE', sourceName: `Freehire · ${row.source}`,
         publishedAt: row.posted_at, employmentType: row.enrichment?.employment_type };
       break;
@@ -175,20 +196,99 @@ function convert(source: ImportSource, row: Row): ImportedJob | null {
     case 'ashby': {
       if (row.isListed === false) return null;
       const locations = [{ location: row.location, country: row.address?.postalAddress?.addressCountry },
-        ...array(row.secondaryLocations).map(loc => ({ location: loc.location, country: loc.address?.addressCountry }))];
-      if (!locations.some(loc => isUsEligibleLocation(loc.location, loc.country))) return null;
+        ...array(row.secondaryLocations).map(loc => ({ location: loc.location, country: loc.address?.postalAddress?.addressCountry || loc.address?.addressCountry }))];
+      const supported = locations.filter(loc => eligibleCountries(loc.location, loc.country).length);
+      if (!supported.length) return null;
       data = { externalId: row.id || row.jobUrl, jobUrl: row.jobUrl, title: row.title, company: source.name,
-        location: locations.filter(loc => isUsEligibleLocation(loc.location, loc.country)).map(loc => loc.location || 'United States').join(' · '), country: 'US',
+        location: supported.map(loc => loc.location || COUNTRY_NAMES[poolCountry(loc.country)!]).join(' · '), eligibleCountries: [...new Set(supported.flatMap(loc => eligibleCountries(loc.location, loc.country)))],
         description: row.descriptionPlain || row.descriptionHtml, sourceName: `Ashby · ${source.name}`,
         workArrangement: arrangement(row.workplaceType || (row.isRemote ? 'remote' : '')), employmentType: row.employmentType,
         salary: row.compensation?.scrapeableCompensationSalarySummary, publishedAt: row.publishedAt };
+      break;
+    }
+    case 'workable': {
+      if (row.telecommuting !== true || ['HYBRID','ONSITE'].includes(arrangement(row.workplace_type || row.workplaceType)) || (row.state && /^(?:draft|closed|archived)$/i.test(row.state))) return null;
+      const locations = array(row.locations).length ? array(row.locations) : [{ city: row.city, country: row.country }];
+      const countries = [...new Set(locations.filter(loc => loc.hidden !== true).flatMap(loc => eligibleCountries(loc.city, loc.countryCode || loc.country_code || loc.country)))];
+      data = { externalId: row.shortcode, jobUrl: row.url || row.shortlink, title: row.title, company: source.name,
+        location: locations.filter(loc => loc.hidden !== true).map(loc => [loc.city, loc.country || loc.country_name || loc.countryCode].filter(Boolean).join(', ')).join(' · '), eligibleCountries: countries,
+        description: row.description, sourceName: `Workable · ${source.name}`, workArrangement: 'REMOTE', employmentType: row.employment_type, publishedAt: row.published_on };
+      break;
+    }
+    case 'recruitee': {
+      if (row.remote !== true || row.hybrid === true || row.on_site === true || (row.status && row.status !== 'published')) return null;
+      const locations = array(row.locations).length ? array(row.locations) : [{ city: row.city || row.location, country_code: row.country_code, country: row.country }];
+      data = { externalId: row.id || row.guid, jobUrl: row.careers_url, title: row.title, company: row.company_name || source.name,
+        location: row.location || locations.map(loc => [loc.city, loc.country].filter(Boolean).join(', ')).join(' · '), eligibleCountries: [...new Set(locations.flatMap(loc => eligibleCountries(loc.city, loc.country_code || loc.country)))],
+        description: [row.description, row.requirements].filter(Boolean).join('\n\n'), sourceName: `Recruitee · ${source.name}`, workArrangement: 'REMOTE', employmentType: row.employment_type_code,
+        publishedAt: row.published_at, expiresAt: row.close_at, salary: salary(row.salary?.min, row.salary?.max, row.salary?.currency, row.salary?.period) };
+      break;
+    }
+    case 'pinpoint': {
+      if (row.workplace_type !== 'remote' || row.hidden === true || row.active === false || row.status && row.status !== 'published') return null;
+      const location = [row.location?.name, row.location?.city, row.location?.province].filter(value => typeof value === 'string' && value.trim()).join(', ');
+      data = { externalId: row.id, jobUrl: row.url, title: row.title, company: source.name,
+        location, country: row.location?.country_code || row.location?.country,
+        description: [row.description, row.key_responsibilities, row.skills_knowledge_expertise, row.benefits].filter(Boolean).join('\n\n'),
+        sourceName: `Pinpoint · ${source.name}`, workArrangement: 'REMOTE', employmentType: row.employment_type_text || row.employment_type,
+        salary: row.compensation_visible === true ? row.compensation : null, publishedAt: row.published_at, expiresAt: row.deadline_at };
+      break;
+    }
+    case 'personio': {
+      const locations = [...(Array.isArray(row.office) ? row.office : [row.office]),
+        ...(Array.isArray(row.additionalOffices?.office) ? row.additionalOffices.office : row.additionalOffices?.office ? [row.additionalOffices.office] : [])].filter(value => typeof value === 'string');
+      if (!/^\d{1,20}$/.test(String(row.id))) return null;
+      data = { externalId: row.id, jobUrl: `https://${source.boardToken}.jobs.personio.de/job/${row.id}?language=en`, title: row.name, company: row.subcompany || source.name,
+        location: locations.join(' · '), description: array(row.jobDescriptions?.jobDescription).map(section => `${section.name || ''}\n${section.value || ''}`).join('\n\n'),
+        sourceName: `Personio · ${source.name}`, workArrangement: arrangement(`${locations.join(' ')} ${remoteTitle(row.name)}`),
+        employmentType: [row.employmentType, row.schedule].filter(Boolean).join(' · '), publishedAt: row.createdAt };
+      break;
+    }
+    case 'teamtailor': {
+      const job = row._jobposting;
+      if (!job || job.jobLocationType !== 'TELECOMMUTE') return null;
+      const place = schemaJobLocations(job);
+      data = { externalId: row.id, jobUrl: row.url, title: row.title || job.title, company: job.hiringOrganization?.name || source.name,
+        location: place.location, eligibleCountries: place.countries, description: row.content_html || job.description,
+        sourceName: `Teamtailor · ${source.name}`, workArrangement: 'REMOTE', employmentType: Array.isArray(job.employmentType) ? job.employmentType.join(', ') : job.employmentType,
+        publishedAt: row.date_published || job.datePosted, expiresAt: job.validThrough };
+      break;
+    }
+    case 'bamboohr': {
+      // BambooHR documents 0=on-site, 1=remote, 2=hybrid. Do not infer it
+      // from isRemote, which is often null on the public list response.
+      if (String(row.locationType) !== '1' || row.jobOpeningStatus && row.jobOpeningStatus !== 'Open') return null;
+      const country = row.atsLocation?.country || row.location?.addressCountry;
+      const place = { ...row.location, ...row.atsLocation };
+      const location = [place.city, place.state || place.province, country].filter(Boolean).join(', ');
+      data = { externalId: row.id, jobUrl: `https://${source.boardToken}.bamboohr.com/careers/${row.id}`, title: row.jobOpeningName, company: source.name,
+        location, country, description: row.description, sourceName: `BambooHR · ${source.name}`,
+        workArrangement: 'REMOTE', salary: row.compensation, employmentType: row.employmentStatusLabel || row.employmentType, publishedAt: row.datePosted };
+      break;
+    }
+    case 'paylocity': {
+      if (row.IsInternal === true || row.IsRemote !== true || !/\b(?:fully remote|100% remote)\b/i.test(row.detail?.remoteLabel || '') || ['HYBRID','ONSITE'].includes(arrangement(row.detail.remoteLabel))) return null;
+      const place = row.JobLocation || {};
+      data = { externalId: row.JobId, jobUrl: `https://recruiting.paylocity.com/recruiting/jobs/Details/${row.JobId}`, title: row.detail.title || row.JobTitle,
+        company: row.detail.company || source.name, location: [place.City, place.State, place.Country].filter(Boolean).join(', '), country: place.Country,
+        description: row.detail.description, sourceName: `Paylocity · ${source.name}`, workArrangement: 'REMOTE', publishedAt: row.PublishedDate };
+      break;
+    }
+    case 'breezy': {
+      const locations = array(row.locations).length ? array(row.locations) : [row.location || {}];
+      const remote = locations.filter(loc => loc.is_remote === true && !/hybrid|on[-_ ]?site/i.test(String(loc.remote_details?.value || '')));
+      if (!remote.length) return null;
+      data = { externalId: row.id, jobUrl: row.url, title: row.name, company: row.company?.name || source.name,
+        location: remote.map(loc => [loc.city || loc.name, loc.country?.name].filter(Boolean).join(', ')).join(' · '),
+        eligibleCountries: [...new Set(remote.flatMap(loc => eligibleCountries(loc.name || loc.city, loc.country?.id || loc.country?.name)))],
+        description: row.description, sourceName: `Breezy HR · ${source.name}`, workArrangement: 'REMOTE', employmentType: row.type?.name, salary: row.salary, publishedAt: row.published_date };
       break;
     }
     case 'smartrecruiters': {
       if (!smartRemote(row) || row.active === false || (row.visibility && row.visibility !== 'PUBLIC')) return null;
       const sections = row.jobAd?.sections || {};
       data = { externalId: row.id, jobUrl: row.postingUrl || row.applyUrl, title: row.name, company: row.company?.name || source.name,
-        location: row.location?.fullLocation || [row.location?.city, row.location?.region, 'United States'].filter(Boolean).join(', '), country: row.location?.country,
+        location: row.location?.fullLocation || [row.location?.city, row.location?.region, COUNTRY_NAMES[poolCountry(row.location?.country)!]].filter(Boolean).join(', '), country: row.location?.country,
         description: Object.values(sections).map((section: any) => typeof section?.text === 'string' ? `${section.title || ''}\n${section.text}` : '').filter(Boolean).join('\n\n'),
         sourceName: `SmartRecruiters · ${row.company?.name || source.name}`, workArrangement: 'REMOTE', employmentType: row.typeOfEmployment?.label,
         publishedAt: row.releasedDate, salary: row.compensation?.salary?.min ? salary(row.compensation.salary.min, row.compensation.salary.max, row.compensation.salary.currency, row.compensation.salary.period) : null };
@@ -213,22 +313,24 @@ function convert(source: ImportSource, row: Row): ImportedJob | null {
   }
   const jobUrl = publicJobUrl(data.jobUrl);
   const title = plainText(data.title, 250), company = plainText(data.company, 250), description = plainText(data.description);
-  if (isExplicitWorldwide(data.location) && /\b(?:outside (?:the )?(?:US|USA|United States) only|(?:excluding|except|not (?:open|available) (?:in|to)|ineligible (?:in|for)) (?:the )?(?:US|USA|United States)|(?:US|USA|United States) (?:applicants|residents|candidates) (?:are )?not eligible)\b/i.test(description)) return null;
-  if (!jobUrl || !title || !company || !description || !isSoftwareJob(title, description) || !isUsEligibleLocation(data.location, data.country) || data.workArrangement !== 'REMOTE') return null;
+  const claimed: PoolCountry[] = data.eligibleCountries || eligibleCountries(data.location, data.country);
+  const countries = POOL_COUNTRIES.filter(code => claimed.includes(code) && eligibleCountries(data.location, code, description).includes(code));
+  if (!jobUrl || !title || !company || !description || !isSoftwareJob(title, description) || !countries.length || data.workArrangement !== 'REMOTE') return null;
   return { externalId: String(data.externalId || jobUrl).slice(0, 300), jobUrl, title, company, description,
-    location: plainText(data.location, 1000), sourceName: data.sourceName, workArrangement: data.workArrangement || 'UNKNOWN',
+    location: plainText(data.location, 1000), eligibleCountries: countries, sourceName: data.sourceName, workArrangement: data.workArrangement || 'UNKNOWN',
     salary: plainText(data.salary, 300) || null, employmentType: plainText(data.employmentType, 150) || null,
     publishedAt: jobDate(data.publishedAt), expiresAt: jobDate(data.expiresAt) };
 }
 
 function smartRemote(row: Row): boolean {
-  return row.location?.remote === true && row.location?.hybrid !== true && !/^(?:HYBRID|ONSITE)$/i.test(String(row.locationType || '')) && isUsLocation(row.location?.city, row.location?.country);
+  return row.location?.remote === true && row.location?.hybrid !== true && !/^(?:HYBRID|ONSITE)$/i.test(String(row.locationType || '')) && eligibleCountries(row.location?.city, row.location?.country).length > 0;
 }
 
 export class FeedError extends Error {
   constructor(message: string, public retryAfterMs = MIN_SYNC_MS, public status?: number) { super(message); this.name = 'FeedError'; }
 }
 const boardRequestGates = new Map<string, Promise<void>>();
+const boardBlockedUntil = new Map<string, number>();
 let smartRequestGate: Promise<void> = Promise.resolve();
 let freehireRequestGate: Promise<void> = Promise.resolve();
 let oceanRequestGate: Promise<void> = Promise.resolve();
@@ -236,10 +338,13 @@ let oceanBlockedUntil = 0;
 let remotejobsRequestGate: Promise<void> = Promise.resolve();
 let remotejobsBlockedUntil = 0;
 export async function readFeed(url: URL, headers: Record<string, string> = {}): Promise<unknown> {
-  if (['boards-api.greenhouse.io', 'api.lever.co', 'api.ashbyhq.com'].includes(url.hostname)) {
-    const gate = (boardRequestGates.get(url.hostname) || Promise.resolve()).then(() => new Promise<void>(resolve => setTimeout(resolve, 250)));
-    boardRequestGates.set(url.hostname, gate); await gate;
+  const boardHost = /\.(?:recruitee\.com|breezy\.hr|pinpointhq\.com|teamtailor\.com|bamboohr\.com|personio\.(?:de|com))$/.test(url.hostname) ? url.hostname.split('.').slice(-2).join('.') : url.hostname;
+  const throttledBoard = ['boards-api.greenhouse.io', 'api.lever.co', 'api.ashbyhq.com', 'apply.workable.com', 'recruitee.com', 'breezy.hr', 'pinpointhq.com', 'teamtailor.com', 'bamboohr.com', 'personio.de', 'personio.com', 'recruiting.paylocity.com'].includes(boardHost);
+  if (throttledBoard) {
+    const gate = (boardRequestGates.get(boardHost) || Promise.resolve()).then(() => new Promise<void>(resolve => setTimeout(resolve, boardHost === 'apply.workable.com' ? 1000 : 250)));
+    boardRequestGates.set(boardHost, gate); await gate;
   }
+  if ((boardBlockedUntil.get(boardHost) || 0) > Date.now()) throw new FeedError('Employer provider is cooling down after a rate limit. Imported jobs were kept.', boardBlockedUntil.get(boardHost)! - Date.now(), 429);
   if (url.hostname === 'remotejobs.org') {
     // The free public API allows fewer than 200 requests/hour/IP. Cache in DB
     // and space all category requests in this API process at least 19s apart.
@@ -265,12 +370,17 @@ export async function readFeed(url: URL, headers: Record<string, string> = {}): 
   let response: Response;
   try {
     response = await fetch(url, { headers: { Accept: 'application/json', 'User-Agent': 'AnchorProposal/1.0 (free job feed reader)', ...headers },
-      signal: AbortSignal.timeout(['freehire.me', 'oceanofjobs.com'].includes(url.hostname) ? 60_000 : 25_000), redirect: 'error' });
+      signal: AbortSignal.timeout(['freehire.me', 'oceanofjobs.com'].includes(url.hostname) ? 60_000 : 25_000),
+      redirect: url.hostname === 'recruiting.paylocity.com' && /^\/recruiting\/jobs\/details\/\d+$/i.test(url.pathname) ? 'manual' : 'error' });
   } catch (error) { throw new FeedError((error as Error)?.name === 'TimeoutError' ? 'Source request timed out. Imported jobs were kept.' : 'Source request failed. Imported jobs were kept.'); }
   if (!response.ok) {
+    if (url.hostname === 'recruiting.paylocity.com' && response.status === 302 && /^\/recruiting\/jobs\/jobnotfound\/?$/i.test(response.headers.get('location') || '')) {
+      await response.body?.cancel(); throw new FeedError('Source returned HTTP 404 (posting closed).', MIN_SYNC_MS, 404);
+    }
     const retry = response.headers.get('retry-after');
     const retryMs = retry && /^\d+$/.test(retry) ? Number(retry) * 1000 : retry ? (Date.parse(retry) - Date.now()) : MIN_SYNC_MS;
     const delay = Number.isFinite(retryMs) ? Math.max(MIN_SYNC_MS, Math.min(7 * 86400_000, retryMs)) : MIN_SYNC_MS;
+    if (response.status === 429 && (throttledBoard || url.hostname === 'api.smartrecruiters.com')) boardBlockedUntil.set(boardHost, Date.now() + delay);
     if (url.hostname === 'oceanofjobs.com' && response.status === 429) oceanBlockedUntil = Date.now() + delay;
     if (url.hostname === 'remotejobs.org' && response.status === 429) remotejobsBlockedUntil = Date.now() + delay;
     throw new FeedError(`Source returned HTTP ${response.status}${response.status === 429 ? ' (rate limit; will retry later)' : ''}.`, delay, response.status);
@@ -285,12 +395,29 @@ export async function readFeed(url: URL, headers: Record<string, string> = {}): 
     if (error instanceof FeedError) throw error;
     throw new FeedError(['TimeoutError', 'AbortError'].includes((error as Error)?.name) ? 'Source response timed out while downloading jobs. Imported jobs were kept.' : 'Source response was interrupted. Imported jobs were kept.');
   } finally { reader.releaseLock(); }
-  try { return JSON.parse(Buffer.concat(chunks).toString('utf8')); }
+  const text = Buffer.concat(chunks).toString('utf8');
+  try { const career = parseCareerResponse(url, text); if (career !== undefined) return career; }
+  catch (error) { const message = (error as Error).message; throw new FeedError(message.startsWith('Source ') ? message : 'Source returned invalid public careers data.'); }
+  if (/^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,99}\.breezy\.hr$/.test(url.hostname) && url.pathname.startsWith('/p/')) {
+    // Read public JobPosting metadata without executing the employer page.
+    for (const match of text.matchAll(/<script\b[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi)) {
+      try {
+        const json = JSON.parse(match[1]);
+        const nodes = Array.isArray(json) ? json : [json, ...(Array.isArray(json['@graph']) ? json['@graph'] : [])];
+        const job = nodes.find(node => node && (node['@type'] === 'JobPosting' || node['@type']?.includes?.('JobPosting')));
+        if (job && typeof job.description === 'string') return { description: job.description };
+      } catch {}
+    }
+    return { description: '' };
+  }
+  try { return JSON.parse(text); }
   catch { throw new FeedError('Source returned invalid JSON.'); }
 }
 
 export async function fetchJobPage(source: ImportSource, cursor: string | null = null, read = readFeed, skipKnown: (url: string) => boolean = () => false): Promise<ImportPage> {
   let url: URL; const headers: Record<string, string> = {};
+  if (['workable', 'recruitee', 'breezy', 'pinpoint'].includes(source.provider) && !/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,99}$/.test(source.boardToken)) throw new FeedError('Invalid employer board name.');
+  if (PUBLIC_CAREER_PROVIDERS.includes(source.provider) && !validCareerBoard(source.provider, source.boardToken)) throw new FeedError('Invalid public employer board name.');
   switch (source.provider) {
     case 'remotejobs':
       try { url = remotejobsUrl(source.boardToken, cursor); } catch (error) { throw new FeedError((error as Error).message); }
@@ -298,18 +425,33 @@ export async function fetchJobPage(source: ImportSource, cursor: string | null =
     case 'ocean': {
       if (cursor && (!/^\d+$/.test(cursor) || Number(cursor) > 10_000 || Number(cursor) % 500 !== 0)) throw new FeedError('Invalid Ocean of Jobs cursor.');
       url = new URL('https://oceanofjobs.com/api/jobs');
-      url.search = new URLSearchParams({ country: 'US', workplace: 'remote', confidence: 'verified',
+      url.search = new URLSearchParams({ country: 'US,GB,IE', workplace: 'remote', confidence: 'verified',
         department: 'Software Engineering,Infrastructure,Data & AI,Security,QA', limit: '500', offset: cursor || '0' }).toString();
       break;
     }
     case 'freehire':
     case 'freehire-global': url = freehireUrl(cursor, source.boardToken, source.provider === 'freehire-global'); break;
-    case 'jobicy': url = new URL('https://jobicy.com/api/v2/remote-jobs?count=200&geo=usa'); if (cursor) url.searchParams.set('cursor', cursor); break;
+    case 'jobicy':
+      if (source.boardToken && !['usa', 'uk', 'ireland', 'anywhere'].includes(source.boardToken)) throw new FeedError('Choose a supported Jobicy country.');
+      url = new URL('https://jobicy.com/api/v2/remote-jobs?count=200'); url.searchParams.set('geo', source.boardToken || 'usa');
+      if (cursor) url.searchParams.set('cursor', cursor); break;
     case 'remoteok': url = new URL('https://remoteok.com/api'); break;
     case 'greenhouse': url = new URL(`https://boards-api.greenhouse.io/v1/boards/${encodeURIComponent(source.boardToken)}/jobs?content=true`); break;
     case 'lever': url = new URL(`https://api.lever.co/v0/postings/${encodeURIComponent(source.boardToken)}?mode=json&limit=100&skip=${cursor || '0'}`); break;
     case 'ashby': url = new URL(`https://api.ashbyhq.com/posting-api/job-board/${encodeURIComponent(source.boardToken)}?includeCompensation=true`); break;
-    case 'smartrecruiters': url = new URL(`https://api.smartrecruiters.com/v1/companies/${encodeURIComponent(source.boardToken)}/postings?limit=20&offset=${cursor || '0'}&country=us&locationType=REMOTE&destination=PUBLIC`); break;
+    case 'workable': url = new URL(`https://apply.workable.com/api/v1/widget/accounts/${encodeURIComponent(source.boardToken)}?details=true`); break;
+    case 'recruitee': url = new URL(`https://${source.boardToken}.recruitee.com/api/offers`); break;
+    case 'breezy': url = new URL(`https://${source.boardToken}.breezy.hr/json`); break;
+    case 'pinpoint': url = new URL(`https://${source.boardToken}.pinpointhq.com/postings.json`); break;
+    case 'personio': url = new URL(`https://${source.boardToken}.jobs.personio.de/xml?language=en`); headers.Accept = 'application/xml'; break;
+    case 'teamtailor': {
+      url = new URL(cursor || `https://${source.boardToken}/jobs.json`);
+      if (url.origin !== `https://${source.boardToken.toLowerCase()}` || url.pathname !== '/jobs.json' || url.hash || url.username || url.password) throw new FeedError('Invalid Teamtailor cursor.');
+      break;
+    }
+    case 'bamboohr': url = new URL(`https://${source.boardToken}.bamboohr.com/careers/list`); break;
+    case 'paylocity': url = new URL(`https://recruiting.paylocity.com/recruiting/jobs/All/${source.boardToken}`); headers.Accept = 'text/html'; break;
+    case 'smartrecruiters': url = new URL(`https://api.smartrecruiters.com/v1/companies/${encodeURIComponent(source.boardToken)}/postings?limit=20&offset=${cursor || '0'}&locationType=REMOTE&destination=PUBLIC`); break;
     case 'usajobs':
       if (!process.env.USAJOBS_API_KEY || !process.env.USAJOBS_EMAIL) throw new FeedError('Add the free USAJOBS_API_KEY and USAJOBS_EMAIL to the API environment to enable this source.');
       url = new URL(`https://data.usajobs.gov/api/Search?ResultsPerPage=500&Page=${cursor || '1'}&LocationName=United%20States&WhoMayApply=public&Fields=full&RemoteIndicator=true`);
@@ -338,7 +480,7 @@ export async function fetchJobPage(source: ImportSource, cursor: string | null =
       next = String(offset + listings.length);
     } else if (listings.length < 500 && payload.total > offset + listings.length) throw new FeedError('Ocean of Jobs returned an incomplete search. Imported jobs were kept.');
     const eligible = listings.filter(row => publicJobUrl(row.url) && mayBeSoftwareJob(plainText(row.title, 250)) && row.workplace_type === 'remote' &&
-      row.confidence === 'verified' && !row.closed_at && isUsLocation(row.location) && !['HYBRID', 'ONSITE'].includes(arrangement(row.location)) && !skipKnown(row.url));
+      row.confidence === 'verified' && !row.closed_at && eligibleCountries(row.location).length > 0 && !['HYBRID', 'ONSITE'].includes(arrangement(row.location)) && !skipKnown(row.url));
     const details: Row[] = []; let index = 0, failure: unknown;
     await Promise.all(Array.from({ length: 6 }, async () => {
       while (index < eligible.length && !failure) {
@@ -361,6 +503,72 @@ export async function fetchJobPage(source: ImportSource, cursor: string | null =
     if (rows.length !== payload.data.length) throw new FeedError('Freehire did not honor the employer source filter.');
     try { next = freehireNext(cursor, rows.length, payload.meta, source.boardToken); }
     catch (error) { throw new FeedError((error as Error).message); }
+  } else if (source.provider === 'teamtailor') {
+    if (!Array.isArray(payload?.items) || !/^https:\/\/jsonfeed.org\/version\//.test(String(payload.version))) throw new FeedError('Source response does not contain a jobs feed.');
+    rows = array(payload.items);
+    incomplete = rows.some(row => row._jobposting?.jobLocationType === 'TELECOMMUTE' && mayBeSoftwareJob(plainText(row.title || row._jobposting.title, 250)) && !plainText(row.content_html || row._jobposting.description));
+    if (payload.next_url !== undefined) {
+      if (typeof payload.next_url !== 'string' || !payload.next_url) throw new FeedError('Invalid Teamtailor pagination.');
+      const target = new URL(payload.next_url);
+      if (target.origin !== url.origin || target.pathname !== '/jobs.json' || target.hash || target.username || target.password || target.href === url.href) throw new FeedError('Invalid Teamtailor pagination.');
+      next = target.href;
+    }
+  } else if (source.provider === 'bamboohr' || source.provider === 'paylocity') {
+    const listings = source.provider === 'bamboohr' ? payload?.result : payload?.Jobs;
+    if (!Array.isArray(listings)) throw new FeedError('Source response does not contain a jobs list.');
+    if (source.provider === 'bamboohr' && (!Number.isSafeInteger(payload.meta?.totalCount) || payload.meta.totalCount !== listings.length)) throw new FeedError('BambooHR returned an incomplete jobs list.');
+    rows = []; let index = 0, failure: unknown;
+    await Promise.all(Array.from({ length: 2 }, async () => {
+      while (index < listings.length && !failure) {
+        const listing = listings[index++];
+        const bamboo = source.provider === 'bamboohr';
+        if (!listing || !mayBeSoftwareJob(plainText(bamboo ? listing.jobOpeningName : listing.JobTitle, 250)) ||
+          (!bamboo && (listing.IsRemote !== true || listing.IsInternal === true)) || (bamboo && String(listing.locationType) !== '1')) continue;
+        const id = String(bamboo ? listing.id : listing.JobId);
+        try {
+          if (!/^\d{1,20}$/.test(id)) throw new FeedError('Source returned an invalid posting ID.');
+          const detailUrl = bamboo ? new URL(`https://${source.boardToken}.bamboohr.com/careers/${id}/detail`) : new URL(`https://recruiting.paylocity.com/recruiting/jobs/Details/${id}`);
+          const result = await read(detailUrl, bamboo ? {} : { Accept: 'text/html' }) as Row;
+          const detail = bamboo ? result?.result?.jobOpening : result;
+          const account = !bamboo ? String(listing.JobLocation?.ModuleId || payload.ModuleId || '') : '';
+          const sameAccount = /^\d{1,20}$/.test(account) && detail?.moduleId === account;
+          if (!detail || (!bamboo && detail.boardToken?.toLowerCase() !== source.boardToken.toLowerCase() && !sameAccount)) throw new FeedError('Source returned a posting for a different employer.');
+          if (!plainText(detail.description)) { incomplete = true; continue; }
+          rows.push(bamboo ? { ...detail, id } : { ...listing, detail });
+        } catch (error) { if (!(error instanceof FeedError && error.status === 404)) failure = error; }
+      }
+    }));
+    if (failure) throw failure;
+  } else if (source.provider === 'personio') {
+    if (!Array.isArray(payload?.jobs)) throw new FeedError('Source response does not contain a jobs list.');
+    rows = array(payload.jobs);
+    incomplete = rows.some(row => mayBeSoftwareJob(plainText(row.name, 250)) && !plainText(array(row.jobDescriptions?.jobDescription).map(section => section.value || '').join('\n')));
+  } else if (source.provider === 'pinpoint') {
+    if (!Array.isArray(payload?.data) || payload.data.some((row: unknown) => !row || typeof row !== 'object')) throw new FeedError('Source response does not contain a jobs list.');
+    rows = array(payload.data);
+    incomplete = rows.some(row => row.workplace_type === 'remote' && mayBeSoftwareJob(plainText(row.title, 250)) &&
+      !plainText([row.description, row.key_responsibilities, row.skills_knowledge_expertise, row.benefits].filter(Boolean).join('\n')));
+  } else if (source.provider === 'recruitee') {
+    if (!Array.isArray(payload?.offers)) throw new FeedError('Source response does not contain a jobs list.');
+    rows = array(payload.offers);
+  } else if (source.provider === 'breezy') {
+    if (!Array.isArray(payload)) throw new FeedError('Source response does not contain a jobs list.');
+    rows = []; const listings = array(payload); let index = 0, failure: unknown;
+    await Promise.all(Array.from({ length: 2 }, async () => {
+      while (index < listings.length && !failure) {
+        const row = listings[index++];
+        const locations = array(row.locations).length ? array(row.locations) : [row.location || {}];
+        if (!mayBeSoftwareJob(plainText(row.name, 250)) || !locations.some(loc => loc.is_remote === true && !/hybrid|on[-_ ]?site/i.test(String(loc.remote_details?.value || '')) && eligibleCountries(loc.name || loc.city, loc.country?.id || loc.country?.name).length)) continue;
+        try {
+          const link = publicJobUrl(row.url);
+          if (!link || new URL(link).hostname !== `${source.boardToken}.breezy.hr` || !/^\/p\/[a-zA-Z0-9_-]+\/?$/.test(new URL(link).pathname)) throw new FeedError('Invalid Breezy posting link.');
+          const detail = await read(new URL(link), { Accept: 'text/html' }) as Row;
+          if (!plainText(detail?.description)) { incomplete = true; continue; }
+          rows.push({ ...row, description: detail.description });
+        } catch (error) { if (!(error instanceof FeedError && error.status === 404)) failure = error; }
+      }
+    }));
+    if (failure) throw failure;
   } else if (source.provider === 'remoteok' || source.provider === 'lever') {
     if (!Array.isArray(payload)) throw new FeedError('Source response does not contain a jobs list.');
     rows = array(payload);

@@ -38,3 +38,11 @@ html,body,#root{margin:0;height:100%;overflow:hidden}body{background:#0b1019;col
 .desktop-page [data-testid="template-designer"] input::placeholder {
   color: var(--muted);
 }
+
+/* Job state backgrounds stay light and identifiable inside the dark workspace. */
+.desktop-page article[data-job-state] [class~="text-slate-600"],
+.desktop-page article[data-job-state] [class~="text-slate-700"] { color:#475569!important; }
+.desktop-page article[data-job-state] [class~="text-primary-deep"] { color:#07565b!important; }
+.desktop-page article[data-job-state] [class~="bg-white"] { background:#fff!important; color:#334155!important; border-color:#cbd5e1!important; }
+.desktop-page article[data-job-state] [class~="bg-white"]:hover { background:#f8fafc!important; }
+.desktop-page article[data-job-state] [class~="bg-primary"] { background:#0b777a!important; color:#fff!important; }
