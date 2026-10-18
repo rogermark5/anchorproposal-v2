@@ -23,3 +23,18 @@ html,body,#root{margin:0;height:100%;overflow:hidden}body{background:#0b1019;col
 .quick-form fieldset>.space-y-4>*{grid-column:1/-1;margin-top:0!important;min-width:0}
 .quick-form fieldset>.space-y-4>:nth-child(2),.quick-form fieldset>.space-y-4>:nth-child(3){grid-column:span 1}
 .quick-footer{position:sticky;bottom:0;z-index:2;background:#0d1520;padding:12px 0}
+
+/* Preserve the template designer's light palette inside the native workspace. */
+.desktop-page [data-testid="template-designer"] input:not([type="checkbox"]):not([type="radio"]):not([type="color"]),
+.desktop-page [data-testid="template-designer"] select {
+  background: var(--input);
+  color: var(--bright);
+  border-color: var(--edge);
+}
+.desktop-page [data-testid="template-designer"] input:focus,
+.desktop-page [data-testid="template-designer"] select:focus {
+  border-color: var(--cyan);
+}
+.desktop-page [data-testid="template-designer"] input::placeholder {
+  color: var(--muted);
+}

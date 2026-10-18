@@ -73,7 +73,8 @@ async function run({ window, auth, settings, safeStorage, globalShortcut, direct
     if (route === '/settings/prompt-mode') return json({ mode: 'profile' });
     if (route === '/settings/my-prompt') return json({ role, assignmentMode: 'profile', promptSource: 'initial', effectivePrompt: { id: 'prompt-1', content: 'Use the saved profile positions.', version: 1 }, masterPrompt: { id: 'prompt-1', content: 'Use the saved profile positions.', version: 1 }, profilePrompts: [], myPrompts: [], assignedPrompts: [] });
     if (route === '/settings/ai') return role === 'MASTER' ? json({ hasApiKey: false, model: 'test-model' }) : json({ message: 'Master access required' }, 403);
-    if (route === '/job-pool') return json({ enabled: false, message: 'Job pool is not enabled.', jobs: [], total: 0 });
+    if (route === '/job-pool') return json({ asOf: new Date().toISOString(), jobs: [], total: 0, nextCursor: null, sources: [] });
+    if (route === '/job-pool/updates') return json({ total: 0, newCount: 0, checkedAt: new Date().toISOString() });
     if (route.startsWith('/desktop/manage/releases')) {
       if (role !== 'MASTER') return json({ message: 'Master access required' }, 403);
       if (req.method === 'POST' && route === '/desktop/manage/releases') { release = { id: 'release-qa', version: data.version, notes: data.notes, createdAt: new Date().toISOString(), downloads: {}, published: false }; return json(release); }
@@ -113,12 +114,37 @@ async function run({ window, auth, settings, safeStorage, globalShortcut, direct
     const loginTime = Date.now(); await click('Sign in to your workspace'); await waitFor('!!document.querySelector(".desktop-sidebar")'); timings.loginMs = Date.now() - loginTime;
     const credentials = await fs.readFile(path.join(directory, 'session.json'), 'utf8'); assert.ok(!credentials.includes('qa-access') && !credentials.includes('qa-refresh')); checks.push('Login uses server API and Windows-encrypted session');
     await waitFor('document.body.innerText.includes("Dashboard")'); await capture('02-workspace');
-    for (const [value, text] of [['/applications', 'Applications'], ['/profiles', 'Profiles'], ['/profiles/new', 'Profile Create'], ['/profiles/profile-1', 'Alex'], ['/templates/new', 'Template'], ['/templates', 'Templates'], ['/users', 'User Management'], ['/settings', 'Settings'], ['/job-pool', 'Job Pool'], ['/download', 'Windows'], ['/desktop-settings', 'Global shortcut']]) {
-      await route(value); await waitFor(`document.body.innerText.includes(${JSON.stringify(text)})`); if (['/profiles','/templates','/settings'].includes(value)) await capture(`page-${value.slice(1)}`);
+    for (const [value, text] of [['/applications', 'Applications'], ['/profiles', 'Profiles'], ['/profiles/new', 'Profile Create'], ['/profiles/profile-1', 'Alex'], ['/templates/new', 'Template'], ['/templates', 'Templates'], ['/users', 'User Management'], ['/settings', 'Settings'], ['/job-pool', 'Remote US Software Jobs'], ['/download', 'Windows'], ['/desktop-settings', 'Global shortcut']]) {
+      await route(value); await waitFor(`document.body.innerText.includes(${JSON.stringify(text)})`); if (['/profiles','/templates','/settings','/job-pool'].includes(value)) await capture(`page-${value.slice(1)}`);
     }
     assert.equal(await evaluate('document.body.innerText.includes("API base URL")'), false);
     assert.ok(await evaluate(`document.body.innerText.includes(${JSON.stringify('AnchorProposal Desktop · ' + require('../package.json').version)})`));
     checks.push('All admin workspace pages, profile detail, template preview, settings and desktop preferences render');
+    await route('/templates');
+    await waitFor('!!document.querySelector("[data-testid=template-designer] select")');
+    const designerColors = await evaluate(`(() => {
+      const panel = document.querySelector('[data-testid="template-designer"]');
+      const controls = [...panel.querySelectorAll('input:not([type=color]):not([type=checkbox]):not([type=radio]),select')];
+      const sample = node => { const style = getComputedStyle(node); return { background: style.backgroundColor, color: style.color }; };
+      return { tabs: panel.querySelectorAll('[role=tab]').length, panel: sample(panel), controls: controls.map(sample) };
+    })()`);
+    const rgb = value => value.match(/[\d.]+/g).slice(0, 3).map(Number);
+    const luminance = value => rgb(value).map(channel => channel / 255).map(channel => channel <= .04045 ? channel / 12.92 : ((channel + .055) / 1.055) ** 2.4).reduce((sum, channel, index) => sum + channel * [.2126, .7152, .0722][index], 0);
+    assert.equal(designerColors.tabs, 12);
+    for (const item of [designerColors.panel, ...designerColors.controls]) {
+      assert.ok(rgb(item.background).every(channel => channel >= 220), 'Template designer and form controls must remain light in the desktop workspace');
+      const values = [luminance(item.background), luminance(item.color)];
+      assert.ok((Math.max(...values) + .05) / (Math.min(...values) + .05) >= 4.5, 'Template controls need readable text contrast');
+    }
+    await evaluate(`document.querySelector('[data-testid="template-designer"]').scrollIntoView({block:'start'})`);
+    await capture('page-template-designer');
+    await evaluate(`[...document.querySelectorAll('[role=tab]')].find(button => button.textContent.trim() === 'PDF Style').click()`);
+    await waitFor(`document.querySelectorAll('[aria-label="Professional Themes"] button').length === 12`);
+    for (const [label, count] of [['Professional Themes', 12], ['Header Accent', 16], ['Subtle Watermark', 14], ['Section Style', 16]]) {
+      assert.equal(await evaluate(`document.querySelectorAll('[aria-label="${label}"] button').length`), count);
+    }
+    await capture('page-template-effects');
+    checks.push('All reference designer tabs and style galleries render with accessible light controls in the native workspace');
     await route('/applications'); await waitFor('document.body.innerText.includes("Applications")');
     const before = window.isVisible(); const startQuick = Date.now(); await showQuick(); target = getQuickWindow(); await waitFor('!!document.querySelector(".quick-form select") && !document.querySelector(".quick-form fieldset").disabled'); timings.quickOpenMs = Date.now() - startQuick;
     assert.equal(window.isVisible(), before); assert.equal(await evaluate('!!document.querySelector(".desktop-sidebar")'), false); assert.ok(target.getBounds().width <= 560); checks.push('Hotkey opens only the separate application window');
