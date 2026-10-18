@@ -15,6 +15,8 @@ async function run({ window, auth, settings, safeStorage, globalShortcut, direct
   const html = '<!doctype html><html><body style="margin:0;background:white;color:#182b3d"><div class="page" style="box-sizing:border-box;width:816px;min-height:1056px;padding:60px;font-family:Arial"><h1>Alex Morgan</h1><h2>Senior Software Engineer</h2><hr><h3>PROFESSIONAL SUMMARY</h3><p>Software engineer building reliable services and thoughtful products.</p></div></body></html>';
   const generations = [{ id: 'gen-1', version: 1, status: 'COMPLETED', structuredOutputJson: content, files: [] }];
   const documentDisplay = { showJobTitle: true };
+  let latestImport={id:'native-initial',startedAt:new Date(Date.now()-3600000).toISOString(),endsAt:new Date().toISOString(),intervalHours:1};
+  const poolJobs = Array.from({length:5},(_,index)=>({id:`qa-pool-${index}`,addedBatchId:index===4?null:'native-initial',title:`Native Software Engineer ${index}`,company:'Fixture Company',location:'Remote, United States',eligibleCountries:['US'],jobUrl:'https://example.invalid/job',sourceId:null,sourceName:'QA only',workArrangement:'REMOTE',description:'Mock-only software job.',createdAt:new Date().toISOString(),postedAt:new Date().toISOString(),publishedAt:null,viewed:index===1,viewedAt:index===1?new Date().toISOString():null,applied:index===2,appliedAt:index===2?new Date().toISOString():null,hidden:false,companyMatches:index===3?[{id:'app-1',company:'Fixture Company',jobTitle:'Existing application'}]:[]}));
   const previewFor = generation => ({ html: html.replace('Software engineer building reliable services and thoughtful products.', generation.structuredOutputJson.summary), pageSize: 'LETTER', canEdit: true, content: generation.structuredOutputJson, version: generation.version,
     coverLetterHtml: html.replace('<h3>PROFESSIONAL SUMMARY</h3><p>Software engineer building reliable services and thoughtful products.</p>', `<p>${profile.email}</p><p>Dear hiring team,</p><p>${generation.structuredOutputJson.coverLetter.paragraphs.join('</p><p>')}</p><p>Sincerely,</p><p>Alex Morgan</p>`) });
   const server = http.createServer(async (req, res) => {
@@ -53,6 +55,11 @@ async function run({ window, auth, settings, safeStorage, globalShortcut, direct
     if (route === '/templates/template-1') return json(template);
     if (route.includes('/preview')) return json({ html, pageSize: 'LETTER' });
     if (route === '/application-options') return json({ locations: [{ id: 'location-1', type: 'LOCATION', value: 'Remote', isDefault: true }], sources: [{ id: 'source-1', type: 'SOURCE', value: 'LinkedIn', isDefault: true }] });
+    if (route === '/applications/validate') {
+      if (data.jobDescription.includes('stale warning')) { await delay(700); return json({warnings:[{category:'REMOTE_CONFLICT',matchedText:'Stale response must be ignored',behavior:'BLOCK',severity:'BLOCK'}],allowed:false}); }
+      const warnings = [{category:'REMOTE_CONFLICT',matchedText:'This role includes hybrid work with two days onsite each week.',behavior:warningBehavior,severity:warningBehavior}];
+      return json({warnings,allowed:warningBehavior !== 'BLOCK',requiresConfirmation:warningBehavior === 'CONFIRM'});
+    }
     if (route === '/applications' && req.method === 'POST') { saved = { ...data, id: 'app-1', status: 'SAVED', createdAt: new Date().toISOString(), profile, warnings: [{ id: 'warning-1', category: 'REMOTE_CONFLICT', matchedText: 'This role includes hybrid work with two days onsite each week.', behavior: warningBehavior }] }; return json(saved); }
     if (route === '/applications') return json(saved ? [{ ...saved, bidder: account(), _count: { generations: complete ? generations.length : 0 }, latestGenerationId: complete ? generations[0].id : null }] : []);
     if (route === '/applications/app-1') { if (req.method === 'PATCH') saved = { ...saved, ...data }; return json({ ...saved, generations: complete ? generations : [], notes: [], statusHistory: [] }); }
@@ -73,8 +80,9 @@ async function run({ window, auth, settings, safeStorage, globalShortcut, direct
     if (route === '/settings/prompt-mode') return json({ mode: 'profile' });
     if (route === '/settings/my-prompt') return json({ role, assignmentMode: 'profile', promptSource: 'initial', effectivePrompt: { id: 'prompt-1', content: 'Use the saved profile positions.', version: 1 }, masterPrompt: { id: 'prompt-1', content: 'Use the saved profile positions.', version: 1 }, profilePrompts: [], myPrompts: [], assignedPrompts: [] });
     if (route === '/settings/ai') return role === 'MASTER' ? json({ hasApiKey: false, model: 'test-model' }) : json({ message: 'Master access required' }, 403);
-    if (route === '/job-pool') return json({ asOf: new Date().toISOString(), jobs: [], total: 0, nextCursor: null, sources: [] });
-    if (route === '/job-pool/updates') return json({ total: 0, newCount: 0, checkedAt: new Date().toISOString() });
+    if (route === '/job-pool') { const status=new URL(req.url,'http://localhost').searchParams.get('status')||'not-applied';const jobs=poolJobs.filter(job=>status==='all'||(status==='applied')===job.applied);return json({ latestImport,asOf:new Date().toISOString(),jobs,total:jobs.length,nextCursor:null,sites:[] }); }
+    if (/^\/job-pool\/jobs\/qa-pool-\d+/.test(route)) {const job=poolJobs.find(job=>route===`/job-pool/jobs/${job.id}`||route===`/job-pool/jobs/${job.id}/viewed`);if(!job)return json({message:'Not found'},404);if(route.endsWith('/viewed')){job.viewed=true;job.viewedAt ||= new Date().toISOString();return json({viewed:true,viewedAt:job.viewedAt});}return json(job);}
+    if (route === '/job-pool/updates') return json({ latestImport,total:poolJobs.length, newCount:0, checkedAt: new Date().toISOString() });
     if (route.startsWith('/desktop/manage/releases')) {
       if (role !== 'MASTER') return json({ message: 'Master access required' }, 403);
       if (req.method === 'POST' && route === '/desktop/manage/releases') { release = { id: 'release-qa', version: data.version, notes: data.notes, createdAt: new Date().toISOString(), downloads: {}, published: false }; return json(release); }
@@ -114,9 +122,31 @@ async function run({ window, auth, settings, safeStorage, globalShortcut, direct
     const loginTime = Date.now(); await click('Sign in to your workspace'); await waitFor('!!document.querySelector(".desktop-sidebar")'); timings.loginMs = Date.now() - loginTime;
     const credentials = await fs.readFile(path.join(directory, 'session.json'), 'utf8'); assert.ok(!credentials.includes('qa-access') && !credentials.includes('qa-refresh')); checks.push('Login uses server API and Windows-encrypted session');
     await waitFor('document.body.innerText.includes("Dashboard")'); await capture('02-workspace');
-    for (const [value, text] of [['/applications', 'Applications'], ['/profiles', 'Profiles'], ['/profiles/new', 'Profile Create'], ['/profiles/profile-1', 'Alex'], ['/templates/new', 'Template'], ['/templates', 'Templates'], ['/users', 'User Management'], ['/settings', 'Settings'], ['/job-pool', 'Remote US Software Jobs'], ['/download', 'Windows'], ['/desktop-settings', 'Global shortcut']]) {
+    for (const [value, text] of [['/applications', 'Applications'], ['/profiles', 'Profiles'], ['/profiles/new', 'Profile Create'], ['/profiles/profile-1', 'Alex'], ['/templates/new', 'Template'], ['/templates', 'Templates'], ['/users', 'User Management'], ['/settings', 'Settings'], ['/job-pool', 'Remote Software Jobs'], ['/download', 'Windows'], ['/desktop-settings', 'Global shortcut']]) {
       await route(value); await waitFor(`document.body.innerText.includes(${JSON.stringify(text)})`); if (['/profiles','/templates','/settings','/job-pool'].includes(value)) await capture(`page-${value.slice(1)}`);
     }
+    await route('/job-pool'); await waitFor('[...document.querySelectorAll("select")].some(select => select.getAttribute("aria-label") === "Filter by country")');
+    assert.deepEqual(await evaluate('Array.from([...document.querySelectorAll("select")].find(select => select.getAttribute("aria-label") === "Filter by country").options).map(option => option.value)'), ['all','US','GB','IE']);
+    checks.push('Native job pool includes US, UK and Ireland country filters');
+      await fill('[aria-label="Filter by applied status"]','all');await waitFor('document.querySelectorAll("article[data-job-state]").length===5');
+      const poolColors=await evaluate('Array.from(document.querySelectorAll("article[data-job-state]"),row=>getComputedStyle(row).backgroundColor)');
+      assert.equal(new Set(poolColors).size,5,'Desktop statuses must have distinct backgrounds at rest');
+      const poolContrast=await evaluate(`Array.from(document.querySelectorAll('article[data-job-state]')).flatMap(row=>{const lum=color=>color.match(/[\\d.]+/g).slice(0,3).map(Number).map(c=>c/255).map(c=>c<=.04045?c/12.92:((c+.055)/1.055)**2.4).reduce((v,c,i)=>v+c*[.2126,.7152,.0722][i],0);const bg=lum(getComputedStyle(row).backgroundColor);return [row.querySelector('button[title]'),row.querySelector('time')].map(el=>{const fg=lum(getComputedStyle(el).color);return (Math.max(bg,fg)+.05)/(Math.min(bg,fg)+.05);});})`);
+      assert.ok(poolContrast.every(value=>value>=4.5),'Desktop job text must stay readable on colored rows');await capture('job-status-colors');
+      checks.push('Native New, Viewed, Applied, older-unviewed and company-match backgrounds stay distinct at rest with readable text');
+      await click('Native Software Engineer 0');await waitFor('document.querySelector("[data-job-id=qa-pool-0]")?.dataset.jobState==="Viewed"');await click('Close');
+      await route('/dashboard');await route('/job-pool');await waitFor('document.querySelector("[data-job-id=qa-pool-0]")?.dataset.jobState==="Viewed"');
+      assert.ok(requests.some(request=>request.route==='/job-pool/jobs/qa-pool-0/viewed'&&request.method==='PATCH'));
+      checks.push('Native job preview persists Viewed through the permitted API route without marking Applied');
+      latestImport={id:'native-next',startedAt:new Date().toISOString(),endsAt:new Date(Date.now()+3600000).toISOString(),intervalHours:1};
+      poolJobs.push({...poolJobs[4],id:'qa-pool-5',title:'Latest Native Software Engineer',addedBatchId:latestImport.id});
+      await evaluate('window.dispatchEvent(new Event("focus"))');
+      await waitFor('document.querySelector("[data-job-id=qa-pool-0]")?.dataset.jobNew==="false"');
+      assert.equal(await evaluate('document.querySelector("[data-job-id=qa-pool-0]").dataset.jobNew'),'false');
+      assert.equal(await evaluate('document.querySelector("[data-job-id=qa-pool-0]").dataset.jobState'),'Viewed');
+      await route('/dashboard');await route('/job-pool');await waitFor('document.querySelector("[data-job-id=qa-pool-5]")?.dataset.jobNew==="true"');
+      checks.push('Native update polling moves New to the next import group while preserving Viewed');
+    await route('/desktop-settings'); await waitFor('document.body.innerText.includes("Global shortcut")');
     assert.equal(await evaluate('document.body.innerText.includes("API base URL")'), false);
     assert.ok(await evaluate(`document.body.innerText.includes(${JSON.stringify('AnchorProposal Desktop · ' + require('../package.json').version)})`));
     checks.push('All admin workspace pages, profile detail, template preview, settings and desktop preferences render');
@@ -156,6 +186,11 @@ async function run({ window, auth, settings, safeStorage, globalShortcut, direct
     await fill('.quick-form input', 'Senior Backend Engineer'); await fill('.quick-form .space-y-4 > div:nth-child(2) input', 'Northstar Labs'); await fill('.quick-form textarea', 'Build Java services. This role includes hybrid work with two days onsite each week.'); await capture('03-quick-application');
     await evaluate('document.querySelector(".quick-form input[type=checkbox]").click()');
     assert.equal(await evaluate('document.querySelector("#app-job-url").disabled && document.querySelector("#app-job-url").value === ""'), true);
+    await waitFor('!!document.querySelector("[data-testid=jd-validation] input[type=checkbox]")');
+    assert.equal(requests.filter(r => r.route === '/applications' && r.method === 'POST').length,0);
+    assert.equal(await evaluate('document.querySelector(".quick-footer .native-primary").disabled'),true);
+    await evaluate('document.querySelector("[data-testid=jd-validation] input[type=checkbox]").click()');
+    checks.push('Changing the JD validates before any application is saved and requires warning review');
     await click('Create & generate'); await waitFor('!!document.querySelector(".quick-dialog")'); assert.ok((await evaluate('document.querySelector(".quick-dialog").textContent')).includes('hybrid')); await capture('04-warning'); await click('Cancel');
     assert.equal(requests.filter(r => r.route.endsWith('/generations/stream')).length, 0); await click('Create & generate'); await waitFor('!!document.querySelector(".quick-dialog")'); await click('Continue');
     await waitFor('!!document.querySelector(".progress-track")'); assert.ok(target.getBounds().height <= 390); assert.equal(requests.filter(r => r.route === '/applications' && r.method === 'POST').length, 1); await capture('05-progress');
@@ -187,7 +222,7 @@ async function run({ window, auth, settings, safeStorage, globalShortcut, direct
     await fill('.quick-answers textarea', 'Why would I be a good fit?'); await evaluate('document.querySelector(".quick-answers textarea").form.requestSubmit()'); await waitFor('document.body.innerText.includes("I build reliable backend services")');
     assert.equal(window.isVisible(), before); await capture('result-answers'); checks.push('Resume preview, cover letter PDF progress, and answer chat stay in the quick window with keyboard tabs');
     const reopen = Date.now(); await showQuick(); await waitFor('!!document.querySelector(".quick-form input") && document.querySelector(".quick-form input").value === ""'); timings.quickReopenMs = Date.now() - reopen;
-    await fill('.quick-form input', 'Platform Engineer'); await fill('.quick-form .space-y-4 > div:nth-child(2) input', 'Example Works'); await fill('.quick-form textarea', 'Build reliable services for distributed teams.'); await click('Manual JSON'); await click('Prepare prompt'); await waitFor('!!document.querySelector(".quick-dialog")'); assert.equal(requests.filter(r => r.route === '/applications' && r.method === 'POST').length, 2); await click('Continue'); await waitFor('!!document.querySelector("dialog[open]")'); await capture('06-manual-json'); checks.push('Repeating the hotkey starts a fresh application after completion without overwriting the previous one');
+    await fill('.quick-form input', 'Platform Engineer'); await fill('.quick-form .space-y-4 > div:nth-child(2) input', 'Example Works'); await fill('.quick-form textarea', 'Build reliable services for distributed teams.'); await click('Manual JSON'); await waitFor('!!document.querySelector("[data-testid=jd-validation] input[type=checkbox]")'); await evaluate('document.querySelector("[data-testid=jd-validation] input[type=checkbox]").click()'); await click('Prepare prompt'); await waitFor('!!document.querySelector(".quick-dialog")'); assert.equal(requests.filter(r => r.route === '/applications' && r.method === 'POST').length, 2); await click('Continue'); await waitFor('!!document.querySelector("dialog[open]")'); await capture('06-manual-json'); checks.push('Repeating the hotkey starts a fresh application after completion without overwriting the previous one');
     await evaluate('window.dispatchEvent(new KeyboardEvent("keydown", {key:"Escape",bubbles:true}))'); assert.equal(target.isVisible(), true);
     await fill('#manual-json-response', JSON.stringify({ ...content, experiences: [{ role: 'Platform Engineer', bullets: ['Built dependable services.'] }] })); await click('Save resume'); await waitFor('document.body.innerText.includes("Your resume is ready")'); checks.push('Shared manual prompt and validated JSON import saved to server');
     target = window; await route('/applications/app-1'); await waitFor('document.body.innerText.includes("Northstar") || document.body.innerText.includes("Example Works")'); checks.push('Application detail and generation history');
@@ -212,11 +247,31 @@ async function run({ window, auth, settings, safeStorage, globalShortcut, direct
     assert.ok(await evaluate('document.querySelector("#generation-way-panel").innerText.includes("Generate the resume")'));
     checks.push('Profile-specific prompt links select the requested profile and separate generation mode');
     await route('/applications/app-1'); await waitFor('[...document.querySelectorAll("button")].some(el => el.textContent === "Answers")');
-    await click('Answers'); await waitFor('!!document.querySelector(".desktop-page textarea")'); await fill('.desktop-page textarea', 'Why would I be a good fit?'); await evaluate('document.querySelector(".desktop-page textarea").form.requestSubmit()'); await waitFor('document.body.innerText.includes("I build reliable backend services")'); await capture('08-answer-chat'); checks.push('Answer chat continues the saved generation conversation');
+    await click('Answers'); await waitFor('!!document.querySelector(".desktop-page textarea") && !document.querySelector(".desktop-page textarea").disabled'); await fill('.desktop-page textarea', 'Why would I be a good fit?'); await waitFor('!!document.querySelector(".desktop-page textarea").form.querySelector("button[type=submit]:not(:disabled)")'); await evaluate('document.querySelector(".desktop-page textarea").form.requestSubmit()'); await waitFor('document.body.innerText.includes("I build reliable backend services")'); await capture('08-answer-chat'); checks.push('Answer chat continues the saved generation conversation');
     target = getQuickWindow(); await showQuick(); await waitFor('!!document.querySelector(".quick-form input") && document.querySelector(".quick-form input").value === ""');
     await fill('.quick-form input', 'Saved without generation'); await fill('.quick-form .space-y-4 > div:nth-child(2) input', 'Example Works'); await fill('.quick-form textarea', 'An application draft.'); await evaluate('window.anchor.window("hide")'); await showQuick(); assert.equal(await evaluate('document.querySelector(".quick-form input").value'), 'Saved without generation');
+    await waitFor('!!document.querySelector("[data-testid=jd-validation] input[type=checkbox]")'); await evaluate('document.querySelector("[data-testid=jd-validation] input[type=checkbox]").click()');
     await click('Save only'); await waitFor('!document.querySelector(".quick-form fieldset").disabled'); await showQuick(); await waitFor('document.querySelector(".quick-form input").value === ""'); assert.equal(requests.filter(r => r.route === '/applications' && r.method === 'POST').length, 3); checks.push('Hiding preserves an unfinished draft; Save only clears it on the next hotkey');
-    warningBehavior = 'BLOCK'; await fill('.quick-form input', 'Blocked role'); await fill('.quick-form .space-y-4 > div:nth-child(2) input', 'Example Works'); await fill('.quick-form textarea', 'This role includes hybrid work.'); await click('Prepare prompt'); await waitFor('document.body.innerText.includes("Resolve blocked warnings")'); assert.equal(await evaluate('[...document.querySelectorAll(".quick-dialog button")].some(b => b.textContent === "Continue")'), false); assert.equal(requests.filter(r => r.route.endsWith('/generations/stream')).length, 1); await click('Cancel'); checks.push('Blocked warnings cannot be bypassed in the quick form');
+    const savesBeforeBlock=requests.filter(r=>r.route==='/applications'&&r.method==='POST').length;
+    warningBehavior = 'BLOCK'; await fill('.quick-form input', 'Blocked role'); await fill('.quick-form .space-y-4 > div:nth-child(2) input', 'Example Works'); await fill('.quick-form textarea', 'This role includes hybrid work.');
+    await waitFor('document.querySelector("[data-testid=jd-validation]")?.innerText.includes("Resolve blocked warnings")');
+    assert.equal(await evaluate('document.querySelector(".quick-footer .native-primary").disabled'),true);
+    await evaluate('document.querySelector(".quick-form").requestSubmit()'); await delay(100);
+    assert.equal(requests.filter(r=>r.route==='/applications'&&r.method==='POST').length,savesBeforeBlock);
+    checks.push('Blocked JD validation prevents saving through both buttons and form submission');
+    warningBehavior='CONFIRM';
+    await fill('.quick-form textarea','stale warning'); await delay(400); await fill('.quick-form textarea','Current description');
+    await waitFor('!!document.querySelector("[data-testid=jd-validation] input[type=checkbox]")'); await delay(500);
+    assert.equal(await evaluate('document.querySelector("[data-testid=jd-validation]").innerText.includes("Stale response")'),false);
+    checks.push('Slower responses for an old JD cannot replace validation of the current text');
+    const closedQuick=target;
+    await evaluate('document.querySelector(".window-close").click()');
+    for(let attempt=0;attempt<40&&!closedQuick.isDestroyed();attempt++)await delay(50);
+    assert.equal(closedQuick.isDestroyed(),true);assert.equal(window.isDestroyed(),false);assert.equal(globalShortcut.isRegistered(settings.hotkey),true);
+    await showQuick();target=getQuickWindow();await waitFor('!!document.querySelector(".quick-form input")&&!document.querySelector(".quick-form fieldset").disabled');
+    assert.equal(await evaluate('document.querySelector(".quick-form input").value'), '');
+    assert.equal(await evaluate('document.querySelector(".quick-form textarea").value'),'');
+    checks.push('Closing destroys only the quick form; the hotkey reopens an empty form while the desktop stays running');
     target = window; await route('/settings'); role = 'MASTER'; send({ type: 'session', signedIn: true }); await waitFor('document.body.innerText.includes("AI Provider")'); await click('AI Provider'); await waitFor('document.body.innerText.includes("Not set")'); await click('Desktop app'); await waitFor('document.body.innerText.includes("Desktop releases")');
     await waitFor('!!document.querySelector("input[placeholder=\\"1.2.3\\"]")'); await fill('input[placeholder="1.2.3"]', '0.2.0'); await fill('textarea[placeholder="What changed in this version?"]', 'Native integration test.'); await click('Create draft'); await waitFor('!!document.querySelector("input[type=file]")');
     await evaluate('(() => { const input = document.querySelector("input[aria-label=\\"Upload portable app for 0.2.0\\"]"); const transfer = new DataTransfer(); transfer.items.add(new File(["MZ-QA-EXECUTABLE"], "QA.exe", {type:"application/octet-stream"})); input.files = transfer.files; input.dispatchEvent(new Event("change", {bubbles:true})); })()');

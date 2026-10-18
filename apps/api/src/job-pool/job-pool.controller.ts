@@ -18,7 +18,7 @@ export class JobPoolController {
 
   @Get('manage')
   @Roles(UserRole.MASTER)
-  manage(@Req() req: { user: AuthUser }) { return this.service.manage(req.user); }
+  manage(@Req() req: { user: AuthUser }, @Query('summary') summary?: string) { return this.service.manage(req.user, summary === '1'); }
 
   @Patch('manage')
   @Roles(UserRole.MASTER)
@@ -53,4 +53,7 @@ export class JobPoolController {
 
   @Patch('jobs/:id/applied')
   markApplied(@Req() req: { user: AuthUser }, @Param('id') id: string, @Body() body: Record<string, unknown>) { return this.service.markApplied(req.user, id, body); }
+
+  @Patch('jobs/:id/viewed')
+  markViewed(@Req() req: { user: AuthUser }, @Param('id') id: string) { return this.service.markViewed(req.user, id); }
 }

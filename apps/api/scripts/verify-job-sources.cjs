@@ -2,8 +2,10 @@
 // application submission or database writes. Results contain metadata only.
 const fs = require('node:fs/promises');
 const path = require('node:path');
-const { fetchJobPage, isUsLocation, plainText } = require('../dist/job-pool/job-providers');
+const { fetchJobPage, readFeed, isUsLocation, plainText } = require('../dist/job-pool/job-providers');
+const { eligibleCountries } = require('../dist/job-pool/job-geography');
 const { isSoftwareJob } = require('../dist/job-pool/software-jobs');
+const { parseCareerResponse, PUBLIC_CAREER_PROVIDERS, validCareerBoard } = require('../dist/job-pool/public-career-feeds');
 const root = path.resolve(__dirname, '../../..');
 const inputFile = path.resolve(root, process.argv[2] || 'apps/api/prisma/job-pool-additional-sources.json');
 const outputFile = path.resolve(root, process.argv[3] || 'tmp/job-pool-qa/verified-sources.json');
@@ -11,11 +13,11 @@ const positiveTarget = Number(process.argv.find(arg => arg.startsWith('--target=
 const jobTarget = Number(process.argv.find(arg => arg.startsWith('--target-jobs='))?.split('=')[1] || 0);
 const softwareTarget = Number(process.argv.find(arg => arg.startsWith('--target-software-sources='))?.split('=')[1] || 0);
 const concurrency = Number(process.argv.find(arg => arg.startsWith('--concurrency='))?.split('=')[1] || 4);
-const maxCandidates = Number(process.argv.find(arg => arg.startsWith('--max-candidates='))?.split('=')[1] || 10_000);
+const maxCandidates = Number(process.argv.find(arg => arg.startsWith('--max-candidates='))?.split('=')[1] || 30_000);
 const newOnly = process.argv.includes('--new-only');
-if (!Number.isInteger(positiveTarget) || positiveTarget < 0 || positiveTarget > 1000 || !Number.isInteger(jobTarget) || jobTarget < 0 || jobTarget > 100_000 || !Number.isInteger(softwareTarget) || softwareTarget < 0 || softwareTarget > 10_000 || !Number.isInteger(concurrency) || concurrency < 1 || concurrency > 12 || !Number.isInteger(maxCandidates) || maxCandidates < 1 || maxCandidates > 10_000) throw Error('Use --target=0..1000, --target-jobs=0..100000, --target-software-sources=0..10000, --concurrency=1..12 and --max-candidates=1..10000.');
+if (!Number.isInteger(positiveTarget) || positiveTarget < 0 || positiveTarget > 30_000 || !Number.isInteger(jobTarget) || jobTarget < 0 || jobTarget > 100_000 || !Number.isInteger(softwareTarget) || softwareTarget < 0 || softwareTarget > 30_000 || !Number.isInteger(concurrency) || concurrency < 1 || concurrency > 12 || !Number.isInteger(maxCandidates) || maxCandidates < 1 || maxCandidates > 30_000) throw Error('Use --target=0..30000, --target-jobs=0..100000, --target-software-sources=0..30000, --concurrency=1..12 and --max-candidates=1..30000.');
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
-const providers = ['greenhouse', 'ashby', 'lever', 'smartrecruiters'];
+const providers = ['greenhouse', 'ashby', 'lever', 'smartrecruiters', 'workable', 'recruitee', 'breezy', 'pinpoint', ...PUBLIC_CAREER_PROVIDERS];
 const gates = new Map(); const blocked = new Set();
 async function read(url) {
   const hostname = url.hostname;
@@ -32,14 +34,25 @@ async function read(url) {
   try { while (true) { const item = await reader.read(); if (item.done) break; length += item.value.length;
     if (length > maximum) { await reader.cancel(); throw Error('Response too large'); } chunks.push(item.value); }
   } finally { reader.releaseLock(); }
-  return JSON.parse(Buffer.concat(chunks).toString('utf8'));
+  const text = Buffer.concat(chunks).toString('utf8');
+  return parseCareerResponse(url, text) ?? JSON.parse(text);
 }
 function endpoint(provider, token) {
+  if (PUBLIC_CAREER_PROVIDERS.includes(provider) && !validCareerBoard(provider, token)) throw Error('Invalid public employer board');
+  if (provider === 'teamtailor') return new URL(`https://${token}/jobs.json`);
+  if (provider === 'personio') return new URL(`https://${token}.jobs.personio.de/xml?language=en`);
+  if (provider === 'bamboohr') return new URL(`https://${token}.bamboohr.com/careers/list`);
+  if (provider === 'paylocity') return new URL(`https://recruiting.paylocity.com/recruiting/jobs/All/${token}`);
+  if (['workable','recruitee','breezy','pinpoint'].includes(provider) && !/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,99}$/.test(token)) throw Error('Invalid employer subdomain');
   token = encodeURIComponent(token);
   if (provider === 'greenhouse') return new URL(`https://boards-api.greenhouse.io/v1/boards/${token}/jobs?content=true`);
   if (provider === 'ashby') return new URL(`https://api.ashbyhq.com/posting-api/job-board/${token}?includeCompensation=true`);
   if (provider === 'lever') return new URL(`https://api.lever.co/v0/postings/${token}?mode=json&limit=100`);
-  return new URL(`https://api.smartrecruiters.com/v1/companies/${token}/postings?limit=100&country=us&locationType=REMOTE&destination=PUBLIC`);
+  if (provider === 'workable') return new URL(`https://apply.workable.com/api/v1/widget/accounts/${token}?details=true`);
+  if (provider === 'recruitee') return new URL(`https://${token}.recruitee.com/api/offers`);
+  if (provider === 'breezy') return new URL(`https://${token}.breezy.hr/json`);
+  if (provider === 'pinpoint') return new URL(`https://${token}.pinpointhq.com/postings.json`);
+  return new URL(`https://api.smartrecruiters.com/v1/companies/${token}/postings?limit=100&locationType=REMOTE&destination=PUBLIC`);
 }
 (async () => {
   const input = JSON.parse(await fs.readFile(inputFile, 'utf8')); const tasks = [];
@@ -61,7 +74,7 @@ function endpoint(provider, token) {
   for (let i = 0; i < length; i++) for (const provider of providers) {
     const token = candidates[provider]?.[i];
     const key = `${provider}:${token}`.toLowerCase();
-    if (token && /^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,99}$/.test(token) && !existing.has(key)) {
+    if (token && /^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,99}$/.test(token) && (!PUBLIC_CAREER_PROVIDERS.includes(provider) || validCareerBoard(provider,token)) && (!['workable','recruitee','breezy','pinpoint'].includes(provider) || /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,99}$/.test(token)) && !existing.has(key)) {
       existing.add(key);
       tasks.push({ provider, boardToken: token, name: input.names?.[token] || input.sources?.find(source => source.provider === provider && source.boardToken === token)?.name || token.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/^./, value => value.toUpperCase()) });
     }
@@ -96,17 +109,27 @@ function endpoint(provider, token) {
       if (blocked.has(url.hostname)) { unavailable.push({ provider: source.provider, boardToken: source.boardToken, reason: 'Rate limited; request skipped for this host.' }); completed++; continue; }
       try {
         const payload = await read(url);
-        const rows = source.provider === 'lever' ? payload : source.provider === 'smartrecruiters' ? payload.content : payload.jobs;
+        const rows = ['lever','breezy'].includes(source.provider) ? payload : source.provider === 'smartrecruiters' ? payload.content : source.provider === 'recruitee' ? payload.offers : source.provider === 'pinpoint' ? payload.data : source.provider === 'teamtailor' ? payload.items : source.provider === 'bamboohr' ? payload.result : source.provider === 'paylocity' ? payload.Jobs : payload.jobs;
         if (!Array.isArray(rows) || !rows.length) throw Error('No published jobs');
         const softwareJobsOnPage = rows.filter(row => {
-          if (!row || typeof row !== 'object' || row.isListed === false || row.active === false) return false;
-          const title = plainText(source.provider === 'lever' ? row.text : source.provider === 'smartrecruiters' ? row.name : row.title, 250);
-          const description = plainText(source.provider === 'greenhouse' ? row.content : source.provider === 'lever' ? [row.descriptionPlain || row.description, ...(row.lists || []).map(item => item.content || '')].join('\n') : row.descriptionPlain || row.descriptionHtml);
+          if (!row || typeof row !== 'object' || row.isListed === false || row.active === false || row.IsInternal === true) return false;
+          const title = plainText(source.provider === 'lever' ? row.text : ['smartrecruiters','breezy','personio'].includes(source.provider) ? row.name : row.jobOpeningName || row.JobTitle || row.title, 250);
+          const description = plainText(source.provider === 'greenhouse' ? row.content : source.provider === 'lever' ? [row.descriptionPlain || row.description, ...(row.lists || []).map(item => item.content || '')].join('\n') : row.descriptionPlain || row.descriptionHtml || row.description || row.Description || row.content_html || (row.jobDescriptions?.jobDescription || []).map(section=>section.value).join('\n'));
           return isSoftwareJob(title, description);
         }).length;
-        let remoteUsFirstPage;
-        if (source.provider === 'smartrecruiters') remoteUsFirstPage = rows.filter(row => row.location?.remote === true && row.location?.hybrid !== true && (!row.visibility || row.visibility === 'PUBLIC') && isUsLocation(row.location?.city, row.location?.country) && isSoftwareJob(plainText(row.name, 250))).length;
-        else remoteUsFirstPage = (await fetchJobPage(source, null, async () => payload)).jobs.length;
+        let remoteUsFirstPage, remoteEligibleFirstPage, jobsByCountry;
+        if (source.provider === 'smartrecruiters') {
+          const eligible = rows.filter(row => row.location?.remote === true && row.location?.hybrid !== true && (!row.visibility || row.visibility === 'PUBLIC') && eligibleCountries(row.location?.city, row.location?.country).length > 0 && isSoftwareJob(plainText(row.name,250)));
+          remoteUsFirstPage = eligible.filter(row => isUsLocation(row.location?.city,row.location?.country)).length;
+          remoteEligibleFirstPage = eligible.length;
+          jobsByCountry = Object.fromEntries(['US','GB','IE'].map(country => [country, eligible.filter(row => eligibleCountries(row.location?.city,row.location?.country).includes(country)).length]));
+        }
+        else {
+          const jobs = (await fetchJobPage(source, null, async (detailUrl, headers) => detailUrl.origin === url.origin && detailUrl.pathname === url.pathname ? payload : readFeed(detailUrl,headers))).jobs;
+          remoteUsFirstPage = jobs.filter(job => job.eligibleCountries.includes('US')).length;
+          remoteEligibleFirstPage = jobs.length;
+          jobsByCountry = Object.fromEntries(['US','GB','IE'].map(country => [country, jobs.filter(job => job.eligibleCountries.includes(country)).length]));
+        }
         if (source.provider === 'greenhouse' && (remoteUsFirstPage > 0 || (softwareTarget && softwareJobsOnPage > 0))) {
           try { const board = await read(new URL(`https://boards-api.greenhouse.io/v1/boards/${encodeURIComponent(source.boardToken)}`));
             const name = plainText(board.name, 120).replace(/^(?:careers|jobs|current openings) at /i, '').trim();
@@ -114,7 +137,7 @@ function endpoint(provider, token) {
           } catch {}
         }
         if (source.provider === 'smartrecruiters') source.name = plainText(rows[0]?.company?.name, 120) || source.name;
-        available.push({ ...source, publishedJobs: Number(payload.meta?.total || payload.totalFound || rows.length), softwareJobsOnPage, remoteUsFirstPage, verifiedAt: new Date().toISOString() });
+        available.push({ ...source, publishedJobs: Number(payload.meta?.total || payload.totalFound || rows.length), softwareJobsOnPage, remoteUsFirstPage, remoteEligibleFirstPage, jobsByCountry, verifiedAt: new Date().toISOString() });
       } catch (error) { unavailable.push({ provider: source.provider, boardToken: source.boardToken, reason: error.message }); }
       completed++;
       if (completed % 30 === 0) { await save(); console.log(JSON.stringify({ checked: completed, candidates: tasks.length, verified: available.length, softwareSources: available.filter(source => source.softwareJobsOnPage > 0).length, withRemoteUs: available.filter(source => source.remoteUsFirstPage > 0).length, matchingJobs: available.reduce((total, source) => total + source.remoteUsFirstPage, 0) })); }

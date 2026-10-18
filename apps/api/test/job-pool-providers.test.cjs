@@ -1,7 +1,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { fetchJobPage, isUsLocation, plainText, publicJobUrl, readFeed, MIN_SYNC_MS, arrangement } = require('../dist/job-pool/job-providers');
-const source = (provider, boardToken = 'example') => ({ provider, boardToken, name: 'Example Co' });
+const source = (provider, boardToken = provider === 'jobicy' ? '' : 'example') => ({ provider, boardToken, name: 'Example Co' });
 
 test('all feed imports exclude non-software occupations even at a software company', async () => {
   const { isSoftwareJob } = require('../dist/job-pool/software-jobs');
@@ -54,7 +54,8 @@ test('company boards filter locations, decode HTML and paginate Lever', async ()
 test('Ashby excludes unlisted posts and supports US secondary locations', async () => {
   const row = { title: 'Software Engineer', location: 'London', address: { postalAddress: { addressCountry: 'GB' } }, secondaryLocations: [{ location: 'Seattle', address: { addressCountry: 'US' } }], jobUrl: 'https://jobs.ashbyhq.com/example/1', descriptionPlain: 'Build', isListed: true, isRemote: true };
   const result = await fetchJobPage(source('ashby'), null, async () => ({ jobs: [row, { ...row, isListed: false }] }));
-  assert.equal(result.jobs.length, 1); assert.equal(result.jobs[0].location, 'Seattle');
+  assert.equal(result.jobs.length, 1); assert.equal(result.jobs[0].location, 'London · Seattle');
+  assert.deepEqual(result.jobs[0].eligibleCountries, ['US', 'GB']);
 });
 test('USAJOBS needs only its free key, filters overseas roles and includes qualifications', async () => {
   const oldKey = process.env.USAJOBS_API_KEY, oldEmail = process.env.USAJOBS_EMAIL;
@@ -114,8 +115,8 @@ test('SmartRecruiters reads only public remote US postings, paginates and preser
   const result = await fetchJobPage(source('smartrecruiters','Example'), '20', async url => {
     calls.push(url);
     if (url.pathname.endsWith('/postings')) {
-      assert.equal(url.searchParams.get('destination'),'PUBLIC'); assert.equal(url.searchParams.get('country'),'us'); assert.equal(url.searchParams.get('locationType'),'REMOTE'); assert.equal(url.searchParams.get('offset'),'20');
-      return { totalFound:100, content:[row,{...row,id:'hybrid',location:{...row.location,hybrid:true}},{...row,id:'foreign',location:{...row.location,country:'gb'}},{...row,id:'internal',visibility:'INTERNAL'},{...row,id:'sales',name:'Sales Manager'}] };
+      assert.equal(url.searchParams.get('destination'),'PUBLIC'); assert.equal(url.searchParams.has('country'),false); assert.equal(url.searchParams.get('locationType'),'REMOTE'); assert.equal(url.searchParams.get('offset'),'20');
+      return { totalFound:100, content:[row,{...row,id:'hybrid',location:{...row.location,hybrid:true}},{...row,id:'foreign',location:{...row.location,country:'de'}},{...row,id:'internal',visibility:'INTERNAL'},{...row,id:'sales',name:'Sales Manager'}] };
     }
     assert.equal(url.hostname,'api.smartrecruiters.com'); assert.ok(url.pathname.endsWith('/123'));
     return {...row,active:true,company:{name:'Actual Company'},postingUrl:'https://jobs.smartrecruiters.com/Example/123-engineer',jobAd:{sections:{jobDescription:{title:'Responsibilities',text:'<p>Build software.</p>'},qualifications:{title:'Qualifications',text:'<li>TypeScript</li>'}}}};

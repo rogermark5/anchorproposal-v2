@@ -1,6 +1,7 @@
 'use client';
 import type { ApplicationOption } from '@/lib/api';
 import { ManagedApplicationOption } from '@/components/managed-application-option';
+import type { DraftValidation } from '@/lib/use-application-validation';
 type ProfileOption = {
   id: string;
   firstName: string;
@@ -32,6 +33,7 @@ export function ApplicationFormFields({
   locations,
   sources,
   onOptionsChange,
+  validation,
 }: {
   form: AppForm;
   setForm: (f: AppForm) => void;
@@ -39,6 +41,7 @@ export function ApplicationFormFields({
   templates: { id: string; name: string; isDefault?: boolean }[];
   showTemplateSelect?: boolean;
   showProfileSelect?: boolean;
+  validation?: DraftValidation;
   locations: ApplicationOption[];
   sources: ApplicationOption[];
   onOptionsChange: () => Promise<{
@@ -49,8 +52,9 @@ export function ApplicationFormFields({
   return (
     <div className="space-y-4">
       <div>
-        <label className="block text-sm font-medium text-slate-700 mb-1">Job Title *</label>
+        <label htmlFor="app-job-title" className="block text-sm font-medium text-slate-700 mb-1">Job Title *</label>
         <input
+          id="app-job-title"
           value={form.jobTitle}
           onChange={(e) => setForm({ ...form, jobTitle: e.target.value })}
           className="w-full px-3 py-2 border border-[var(--border)] rounded-lg text-sm"
@@ -59,8 +63,9 @@ export function ApplicationFormFields({
       </div>
 
       <div>
-        <label className="block text-sm font-medium text-slate-700 mb-1">Company</label>
+        <label htmlFor="app-company" className="block text-sm font-medium text-slate-700 mb-1">Company</label>
         <input
+          id="app-company"
           value={form.company}
           onChange={(e) => setForm({ ...form, company: e.target.value })}
           className="w-full px-3 py-2 border border-[var(--border)] rounded-lg text-sm"
@@ -115,13 +120,24 @@ export function ApplicationFormFields({
       </div>
 
       <div>
-        <label className="block text-sm font-medium text-slate-700 mb-1">Job Description</label>
+        <label htmlFor="app-job-description" className="block text-sm font-medium text-slate-700 mb-1">Job Description</label>
         <textarea
+          id="app-job-description"
           value={form.jobDescription}
           onChange={(e) => setForm({ ...form, jobDescription: e.target.value })}
           className="w-full px-3 py-2 border border-[var(--border)] rounded-lg text-sm h-36"
           placeholder="Paste the full job description here..."
         />
+        {validation && <div className="mt-2 text-sm" aria-live="polite" data-testid="jd-validation">
+          {validation.needsProfile && <p className="text-slate-500">Select a profile to check the description.</p>}
+          {validation.pending && <p role="status" className="text-slate-500">Checking job description…</p>}
+          {validation.error && <p role="alert" className="text-red-700">{validation.error} Edit the description to retry.</p>}
+          {validation.result && (validation.result.warnings.length ? <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-amber-900">
+            <p className="font-medium">Review before creating an application</p>
+            {validation.result.warnings.map((warning, index) => <p key={index} className="mt-2">{warning.matchedText}</p>)}
+            {!validation.result.allowed ? <p className="mt-2 font-medium" role="alert">Resolve blocked warnings or contact your admin before creating this application.</p> : <label className="mt-3 flex items-start gap-2"><input type="checkbox" checked={validation.reviewed} onChange={event => validation.setReviewed(event.target.checked)} className="mt-1"/>I reviewed these warnings and want to save this application.</label>}
+          </div> : <p className="text-emerald-700">Job description checked. No warnings found.</p>)}
+        </div>}
       </div>
 
       <ManagedApplicationOption

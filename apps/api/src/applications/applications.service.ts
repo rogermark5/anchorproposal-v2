@@ -247,6 +247,41 @@ export class ApplicationsService {
     return { ...app, duplicates: validation.duplicates };
   }
 
+  // Read-only preview: never creates an application, warning, or status history.
+  async validateDraft(data: Record<string, unknown>, user: AuthUser) {
+    if (!canBid(user.role)) throw new ForbiddenException('Master accounts cannot create applications');
+    const account = await this.prisma.user.findUnique({ where: { id: user.id } });
+    if (!account?.canCreateApplications) throw new ForbiddenException('You do not have permission to create applications');
+    if (typeof data.profileId !== 'string' || !data.profileId) throw new BadRequestException('Select a profile to validate the description.');
+    await this.profilesService.checkAccess(data.profileId, user);
+    for (const field of ['jobTitle', 'company', 'location', 'workArrangement', 'jobDescription', 'jobUrl']) {
+      if (data[field] !== undefined && (typeof data[field] !== 'string' || (data[field] as string).length > (field === 'jobDescription' ? 100000 : 5000))) throw new BadRequestException('Invalid application details.');
+    }
+    const validation = await this.rulesService.validateApplication({
+      profileId: data.profileId, jobTitle: String(data.jobTitle || ''), company: String(data.company || ''),
+      location: String(data.location || ''), workArrangement: String(data.workArrangement || ''),
+      jobDescription: String(data.jobDescription || ''), jobUrl: String(data.jobUrl || ''),
+    });
+    // Preview consumers only need warning text; do not disclose other bidders' records.
+    return { warnings: validation.warnings, ...this.rulesService.canGenerate(validation.warnings) };
+  }
+
+  async matchingCompanies(user: AuthUser, companies: string[]) {
+    const key = (name: string) => name.toLowerCase().replace(/\s/g, '');
+    const wanted = new Set(companies.map(key).filter(Boolean));
+    const matches: Record<string, { id: string; company: string; jobTitle: string }[]> = Object.create(null);
+    if (!wanted.size) return matches;
+    const applications = await this.prisma.application.findMany({
+      where: { bidderId: user.id, ...(!isAdmin(user.role) && !isMaster(user.role) ? { profile: { assignments: { some: { userId: user.id, activeTo: null } } } } : {}) },
+      select: { id: true, company: true, jobTitle: true }, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+    });
+    for (const application of applications) {
+      const normalized = key(application.company);
+      if (wanted.has(normalized)) (matches[normalized] ||= []).push(application);
+    }
+    return matches;
+  }
+
   async update(
     id: string,
     data: {

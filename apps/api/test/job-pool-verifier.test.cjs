@@ -13,7 +13,7 @@ function fixture() {
   fs.mkdirSync(directory, { recursive: true });
   const input = path.join(directory, 'input.json'), output = path.join(directory, 'output.json');
   const calls = path.join(directory, 'calls.json'), preload = path.join(directory, 'preload.cjs');
-  const sources = ['first', 'second', 'third'].map(boardToken => ({ provider: 'ashby', boardToken, name: boardToken }));
+  const sources = ['first', 'second', 'third'].map(name => ({ provider: 'ashby', boardToken: `qa-anchor-verifier-${name}`, name }));
   fs.writeFileSync(input, JSON.stringify({ sources }));
   fs.writeFileSync(preload, `const fs=require('fs'); global.fetch=async(url)=>{fs.appendFileSync(${JSON.stringify(calls)},JSON.stringify(String(url))+'\\n'); return new Response(JSON.stringify({jobs:[1,2].map(id=>({id,title:'Software Engineer',isListed:true,workplaceType:'Remote',location:'USA',descriptionPlain:'Build software',jobUrl:'https://example.com/'+id}))}));};`);
   const previous = { candidates: 3, completed: 1, available: [{ ...sources[0], remoteUsFirstPage: 1, publishedJobs: 1 }], unavailable: [], rateLimitedHosts: [] };
@@ -72,7 +72,7 @@ test('source verification retains rate-limit blocks across a resumed pass', () =
 test('source expansion verifies live software boards while retaining the stricter remote US job count', () => {
   const f = fixture();
   const preload=path.join(path.dirname(f.input),'preload.cjs');
-  fs.writeFileSync(preload,`const fs=require('fs');global.fetch=async url=>{fs.appendFileSync(${JSON.stringify(f.calls)},JSON.stringify(String(url))+'\\n');const first=String(url).includes('/first?');return new Response(JSON.stringify({jobs:[{id:'one',title:first?'Recruiter':'Software Engineer',isListed:true,workplaceType:'OnSite',location:'USA',descriptionPlain:'Build software',jobUrl:'https://example.com/one'}]}));};`);
+  fs.writeFileSync(preload,`const fs=require('fs');global.fetch=async url=>{fs.appendFileSync(${JSON.stringify(f.calls)},JSON.stringify(String(url))+'\\n');const first=new URL(url).pathname.endsWith('verifier-first');return new Response(JSON.stringify({jobs:[{id:'one',title:first?'Recruiter':'Software Engineer',isListed:true,workplaceType:'OnSite',location:'USA',descriptionPlain:'Build software',jobUrl:'https://example.com/one'}]}));};`);
   const result=f.run(['--new-only','--target-software-sources=1','--concurrency=1']);
   assert.equal(result.status,0,result.stderr);
   const saved=JSON.parse(fs.readFileSync(f.output));assert.equal(saved.completed,2);assert.equal(saved.available[0].softwareJobsOnPage,0);assert.equal(saved.available[1].softwareJobsOnPage,1);
@@ -85,4 +85,34 @@ test('new-source discovery excludes customized sources and every previously regi
   const result=f.run(['--new-only','--target-software-sources=1','--concurrency=1']);assert.equal(result.status,0,result.stderr);
   const calls=fs.readFileSync(f.calls,'utf8').trim().split('\n');assert.equal(calls.length,1);assert.match(calls[0],/second/);
   assert.equal(JSON.parse(fs.readFileSync(f.output)).candidates,1);
+});
+
+test('public-board verifier supports Pinpoint and reports distinct eligible job counts for all three countries',()=>{
+  const f=fixture();
+  fs.writeFileSync(f.input,JSON.stringify({sources:[{provider:'pinpoint',boardToken:'country-cli-fixture',name:'Country fixture'}]}));
+  const preload=path.join(path.dirname(f.input),'preload.cjs');
+  fs.writeFileSync(preload,`global.fetch=async()=>new Response(JSON.stringify({data:['United States','United Kingdom','Ireland','Worldwide','Germany'].map((name,id)=>({id,title:'Software Engineer',workplace_type:'remote',location:{name},description:'Build reliable software',url:'https://example.pinpointhq.com/en/postings/'+id}))}));`);
+  const result=f.run(['--new-only','--concurrency=1']);assert.equal(result.status,0,result.stderr);
+  const [source]=JSON.parse(fs.readFileSync(f.output)).available;
+  assert.equal(source.provider,'pinpoint');assert.equal(source.softwareJobsOnPage,5);
+  assert.equal(source.remoteEligibleFirstPage,4);assert.equal(source.remoteUsFirstPage,2);
+  assert.deepEqual(source.jobsByCountry,{US:2,GB:2,IE:2});
+});
+
+test('public-board verifier accepts the four new feed formats and records country eligibility after full detail parsing',()=>{
+  for(const provider of ['personio','teamtailor','bamboohr','paylocity']){
+    const f=fixture(),boardToken=provider==='paylocity'?'00000000-0000-4000-8000-000000000001':provider==='teamtailor'?'qa-anchor-verifier.teamtailor.com':'qa-anchor-verifier';
+    fs.writeFileSync(f.input,JSON.stringify({sources:[{provider,boardToken,name:'QA Employer'}]}));
+    const script=`const provider=${JSON.stringify(provider)},token=${JSON.stringify(boardToken)};global.fetch=async(value)=>{const u=new URL(value);let body;
+      if(provider==='personio')body='<workzag-jobs><position><id>321</id><subcompany>QA Employer</subcompany><name>Software Engineer</name><office>Remote, United Kingdom</office><jobDescriptions><jobDescription><value>Build software APIs</value></jobDescription></jobDescriptions></position></workzag-jobs>';
+      else if(provider==='teamtailor')body=JSON.stringify({version:'https://jsonfeed.org/version/1.1',items:[{id:'one',title:'Software Engineer',url:'https://qa-anchor-verifier.teamtailor.com/jobs/321-engineer',content_html:'Build software APIs',_jobposting:{jobLocationType:'TELECOMMUTE',jobLocation:{address:{addressCountry:'IE'}}}}]});
+      else if(provider==='bamboohr')body=JSON.stringify(u.pathname.endsWith('/list')?{meta:{totalCount:1},result:[{id:'321',jobOpeningName:'Software Engineer',locationType:'1'}]}:{result:{jobOpening:{jobOpeningName:'Software Engineer',locationType:'1',atsLocation:{country:'US'},description:'Build software APIs'}}});
+      else if(u.pathname.toLowerCase().includes('/all/'))body='<script>window.pageData = '+JSON.stringify({ModuleTitle:'QA Employer',Jobs:[{JobId:321,JobTitle:'Software Engineer',IsRemote:true,JobLocation:{Country:'GB'}}]})+';</script>';
+      else body='<a class="breadcrumb-link" href="/recruiting/jobs/All/'+token+'">All Jobs</a><h2 id="LayoutLogoName">QA Employer</h2><span class="job-preview-title">Software Engineer</span><div class="preview-location">Fully Remote</div><div class="job-preview-details"><p>Build software APIs</p></div>';
+      return new Response(body);};`;
+    fs.writeFileSync(path.join(path.dirname(f.input),'preload.cjs'),script);
+    const result=f.run(['--new-only','--concurrency=1']);assert.equal(result.status,0,provider+': '+result.stderr);
+    const [saved]=JSON.parse(fs.readFileSync(f.output)).available;assert.ok(saved,provider);assert.equal(saved.remoteEligibleFirstPage,1,provider);
+    assert.deepEqual(saved.jobsByCountry,provider==='bamboohr'?{US:1,GB:0,IE:0}:provider==='teamtailor'?{US:0,GB:0,IE:1}:{US:0,GB:1,IE:0},provider);
+  }
 });

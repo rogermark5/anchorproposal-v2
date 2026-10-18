@@ -19,15 +19,23 @@ export type GenerationDocumentPreview = { html: string; pageSize: string; coverL
 
 export type UserRole = 'MASTER' | 'ADMIN' | 'BIDDER';
 
-export type PoolJob = { id: string; title: string; company: string; location: string; description: string; jobUrl: string;
+export type PoolJob = { id: string; title: string; company: string; location: string; description?: string; jobUrl: string;
+  createdAt: string; addedBatchId: string | null; companyMatches?: { id: string; company: string; jobTitle: string }[];
+  viewed: boolean; viewedAt: string | null;
+  eligibleCountries?: ('US' | 'GB' | 'IE')[];
   sourceId: string | null; sourceName: string; salary: string | null; employmentType: string | null;
   workArrangement: 'REMOTE' | 'HYBRID' | 'ONSITE' | 'UNKNOWN'; publishedAt: string | null; postedAt: string; expiresAt: string | null; hidden: boolean; applied: boolean; appliedAt: string | null };
 export type PoolSource = { id: string; provider: string; name: string; boardToken: string; enabled: boolean; queued: boolean;
   running: boolean; configured: boolean; lastAttemptAt?: string | null; lastSyncedAt: string | null; nextSyncAt: string; nextManualSyncAt: string | null; lastError: string | null; lastCount: number };
 export type PoolManagement = { settings: { enabled: boolean; intervalHours: number }; sources: PoolSource[];
+  sourceTarget?: number;
+  sourceStats?: { totalSources:number; enabledSources:number; checkedSources:number; matchingSources:number; pendingSources:number; runningSources:number; retrySources:number; importing:boolean };
+  coverage?: { country: 'US' | 'GB' | 'IE'; name: string; target: number; monitoredSources: number; successfullyReadSources: number; matchingSources: number; availableJobs: number }[];
   providers: { id: string; name: string; board: boolean; docs: string; configured: boolean; choices?: string[] }[] };
-export type PoolListing = { asOf?: string; jobs: PoolJob[]; total: number; nextCursor: string | null; sources: { id: string; provider: string; name: string }[] };
-export type PoolUpdates = { total: number; newCount: number; checkedAt: string };
+export type PoolImportBatch = { id: string; startedAt: string; endsAt: string; intervalHours: number };
+export type PoolListing = { asOf?: string; latestImport: PoolImportBatch | null; jobs: PoolJob[]; total: number; nextCursor: string | null; sites: { id: string; name: string }[] };
+export type ApplicationValidation = { warnings: { category: string; matchedText: string; severity: string; behavior: string }[]; allowed: boolean; requiresConfirmation: boolean; requiresAdminReview: boolean };
+export type PoolUpdates = { total: number; newCount: number; checkedAt: string; latestImport: PoolImportBatch | null };
 
 export type DesktopPackageKind = 'setup' | 'portable';
 export type DesktopReleaseFile = { version: string; bytes: number; sha256: string; publishedAt: string; downloadPath?: string };
@@ -129,10 +137,10 @@ class ApiClient {
   private async request<T>(path: string, options: RequestInit = {}): Promise<T> {
     const method = options.method || 'GET';
     const cacheable = method === 'GET' && /^\/(profiles(?:\?|$)|templates(?:\?|$)|users(?:\?|$)|settings\/|dashboard\/|applications(?:\?|$))/.test(path) && !/preview/.test(path);
-    if (method !== 'GET') this.invalidateCache();
+    if (method !== 'GET' && path !== '/applications/validate') this.invalidateCache();
     if (!cacheable) {
       try { return await this.performRequest<T>(path, options); }
-      finally { if (method !== 'GET') this.invalidateCache(); }
+      finally { if (method !== 'GET' && path !== '/applications/validate') this.invalidateCache(); }
     }
     const epoch = this.cacheEpoch;
     const cached = this.cache.get(path);
@@ -314,6 +322,10 @@ class ApiClient {
 
   createApplication(data: Record<string, unknown>) {
     return this.request('/applications', { method: 'POST', body: JSON.stringify(data) });
+  }
+
+  validateApplication(data: Record<string, unknown>) {
+    return this.request<ApplicationValidation>('/applications/validate', { method: 'POST', body: JSON.stringify(data) });
   }
 
   getApplicationOptions() {
@@ -893,8 +905,10 @@ class ApiClient {
   getJobPool(params: Record<string, string> = {}) { return this.request<PoolListing>(`/job-pool?${new URLSearchParams(params)}`); }
   getPoolUpdates(params: Record<string, string>) { return this.request<PoolUpdates>(`/job-pool/updates?${new URLSearchParams(params)}`); }
   markPoolJobApplied(id: string, applied: boolean) { return this.request<{ applied: boolean; appliedAt: string | null }>(`/job-pool/jobs/${id}/applied`, { method: 'PATCH', body: JSON.stringify({ applied }) }); }
+  markPoolJobViewed(id: string) { return this.request<{ viewed: true; viewedAt: string }>(`/job-pool/jobs/${id}/viewed`, { method: 'PATCH', body: '{}' }); }
   getPoolJob(id: string) { return this.request<PoolJob>(`/job-pool/jobs/${id}`); }
   getPoolManagement() { return this.request<PoolManagement>('/job-pool/manage'); }
+  getPoolSummary() { return this.request<Omit<PoolManagement,'sources'>>('/job-pool/manage?summary=1'); }
   updatePoolSettings(data: Partial<PoolManagement['settings']>) { return this.request<PoolManagement['settings']>('/job-pool/manage', { method: 'PATCH', body: JSON.stringify(data) }); }
   addPoolSource(data: { provider: string; name: string; boardToken: string }) { return this.request('/job-pool/sources', { method: 'POST', body: JSON.stringify(data) }); }
   updatePoolSource(id: string, enabled: boolean) { return this.request(`/job-pool/sources/${id}`, { method: 'PATCH', body: JSON.stringify({ enabled }) }); }

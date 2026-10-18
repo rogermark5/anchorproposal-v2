@@ -12,16 +12,17 @@ const { JobPoolService } = require('../dist/job-pool/job-pool.service');
 test('HTTP permissions allow all signed-in users to browse and only Master to publish or manage imports', async t => {
   const secret = 'job-pool-test-only'; const jwt = new JwtService({ secret }); let calls = 0;
   passport.use('jwt', new Strategy({ jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(), secretOrKey: secret }, (data, done) => done(null, { id: data.role, role: data.role })));
-  const service = Object.fromEntries(['list', 'updates', 'manage', 'updateSettings', 'addSource', 'updateSource', 'sync', 'addJob', 'detail', 'hide', 'apply', 'markApplied'].map(name => [name, () => { calls++; return { ok: true }; }]));
+  const service = Object.fromEntries(['list', 'updates', 'manage', 'updateSettings', 'addSource', 'updateSource', 'sync', 'addJob', 'detail', 'hide', 'apply', 'markApplied', 'markViewed'].map(name => [name, () => { calls++; return { ok: true }; }]));
   class TestModule {}
   Module({ controllers: [JobPoolController], providers: [{ provide: JobPoolService, useValue: service }] })(TestModule);
   const app = await NestFactory.create(TestModule, { logger: false }); await app.listen(0, '127.0.0.1'); t.after(() => app.close());
   const base = await app.getUrl();
   const request = (route, role, method = 'GET') => fetch(base + route, { method, headers: { 'Content-Type': 'application/json', ...(role ? { Authorization: `Bearer ${jwt.sign({ role })}` } : {}) }, ...(method !== 'GET' ? { body: '{}' } : {}) });
-  const management = [['/job-pool/manage','GET'],['/job-pool/manage','PATCH'],['/job-pool/sources','POST'],['/job-pool/sources/source-1','PATCH'],['/job-pool/sync','POST'],['/job-pool','POST'],['/job-pool/jobs/job-1','PATCH']];
+  const management = [['/job-pool/manage','GET'],['/job-pool/manage?summary=1','GET'],['/job-pool/manage','PATCH'],['/job-pool/sources','POST'],['/job-pool/sources/source-1','PATCH'],['/job-pool/sync','POST'],['/job-pool','POST'],['/job-pool/jobs/job-1','PATCH']];
   for (const role of [null, 'ADMIN', 'BIDDER', 'MASTER']) {
     for (const route of ['/job-pool', '/job-pool/updates?since=2026-10-17', '/job-pool/jobs/job-1']) assert.equal((await request(route, role)).status, role ? 200 : 401);
     assert.equal((await request('/job-pool/jobs/job-1/applied', role, 'PATCH')).status, role ? 200 : 401);
+    assert.equal((await request('/job-pool/jobs/job-1/viewed', role, 'PATCH')).status, role ? 200 : 401);
     for (const [route, method] of management) {
       const before = calls; const response = await request(route, role, method);
       assert.equal(response.status, role === 'MASTER' ? (method === 'POST' ? 201 : 200) : role ? 403 : 401, `${role} ${method} ${route}`);

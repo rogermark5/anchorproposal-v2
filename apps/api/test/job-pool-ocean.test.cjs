@@ -6,7 +6,7 @@ const page=(jobs,total=jobs.length,offset=0)=>({jobs,total,offset,limit:500});
 
 test('Ocean requests verified US remote technology roles and obtains full descriptions from its fixed API host',async()=>{
   const calls=[];const result=await fetchJobPage(source,null,async url=>{calls.push(url);return calls.length===1?page([row()]):row();});
-  assert.equal(calls[0].searchParams.get('country'),'US');assert.equal(calls[0].searchParams.get('workplace'),'remote');assert.equal(calls[0].searchParams.get('confidence'),'verified');assert.equal(calls[0].searchParams.get('limit'),'500');
+  assert.equal(calls[0].searchParams.get('country'),'US,GB,IE');assert.equal(calls[0].searchParams.get('workplace'),'remote');assert.equal(calls[0].searchParams.get('confidence'),'verified');assert.equal(calls[0].searchParams.get('limit'),'500');
   assert.equal(calls[1].href,'https://oceanofjobs.com/api/jobs/12345678');assert.equal(result.jobs.length,1);assert.equal(result.jobs[0].description,'Build software and APIs');assert.equal(result.jobs[0].jobUrl,row().url);assert.equal(result.jobs[0].sourceName,'Ocean of Jobs · workday');assert.equal(result.complete,true);
 });
 
@@ -17,7 +17,7 @@ test('Ocean skips existing primary postings and rejects metadata for unrelated, 
 });
 
 test('Ocean rechecks detail eligibility, discards stale and closed jobs, and hides estimated pay',async()=>{
-  for(const change of [{closed_at:new Date().toISOString()},{last_seen:new Date(Date.now()-8*86400_000).toISOString()},{location:'Worldwide'},{workplace_type:'onsite'},{description:''}]){
+  for(const change of [{closed_at:new Date().toISOString()},{last_seen:new Date(Date.now()-8*86400_000).toISOString()},{location:'Remote'},{workplace_type:'onsite'},{description:''}]){
     let i=0;const result=await fetchJobPage(source,null,async()=>++i===1?page([row()]):row(change));assert.equal(result.jobs.length,0);
   }
   let i=0;const result=await fetchJobPage(source,null,async()=>++i===1?page([row()]):row({salary_is_estimate:1}));assert.equal(result.jobs[0].salary,null);

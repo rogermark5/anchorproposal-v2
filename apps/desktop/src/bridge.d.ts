@@ -7,7 +7,7 @@ interface Window {
     logout(): Promise<void>;
     request(route: string, method?: string, body?: unknown): Promise<any>;
     settings(value: Partial<DesktopSettings>): Promise<DesktopSettings>;
-    window(action: 'hide' | 'compact' | 'expand' | 'quit' | 'new' | 'workspace' | 'minimize' | 'maximize'): Promise<void>;
+    window(action: 'close' | 'hide' | 'compact' | 'expand' | 'quit' | 'new' | 'workspace' | 'minimize' | 'maximize'): Promise<void>;
     openRoute(path: string): Promise<void>;
     external(url: string): Promise<void>;
     ready(): Promise<void>;

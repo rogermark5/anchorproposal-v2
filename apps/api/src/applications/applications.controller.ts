@@ -31,6 +31,11 @@ export class ApplicationsController {
     return this.applicationsService.create(body, req.user);
   }
 
+  @Post('validate')
+  validateDraft(@Body() body: Record<string, unknown>, @Req() req: { user: AuthUser }) {
+    return this.applicationsService.validateDraft(body, req.user);
+  }
+
   @Patch('warnings/:warningId/acknowledge')
   acknowledgeWarning(
     @Param('warningId') warningId: string,

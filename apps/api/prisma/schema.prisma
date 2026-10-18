@@ -134,6 +134,7 @@ model User {
   generationPreferences ProfileGenerationPreference[]
   templateCustomizations UserTemplateCustomization[]
   poolAppliedJobs    JobPoolApplied[]
+  poolViewedJobs     JobPoolViewed[]
 
   @@index([managedByAdminId])
   @@map("users")
@@ -622,12 +623,14 @@ model JobPoolSource {
 model JobPoolJob {
   id              String          @id @default(uuid())
   sourceId        String?
+  addedBatchId    String?
   externalId      String
   canonicalUrl    String          @unique
   jobUrl          String
   title           String
   company         String
   location        String
+  eligibleCountries String[]      @default([])
   workArrangement WorkArrangement @default(UNKNOWN)
   description     String          @db.Text
   salary          String?
@@ -644,8 +647,11 @@ model JobPoolJob {
   updatedAt       DateTime         @updatedAt
   source          JobPoolSource?  @relation(fields: [sourceId], references: [id], onDelete: SetNull)
   appliedBy       JobPoolApplied[]
+  viewedBy        JobPoolViewed[]
 
   @@index([isSoftware, workArrangement, postedAt, id])
+  @@index([isSoftware, workArrangement, createdAt, id], map: "job_pool_added_idx")
+  @@index([eligibleCountries], type: Gin)
   @@index([isActive, hidden, lastSeenAt])
   @@index([sourceId])
   @@map("job_pool_jobs")
@@ -661,4 +667,16 @@ model JobPoolApplied {
   @@id([userId, jobId])
   @@index([jobId])
   @@map("job_pool_applied")
+}
+
+model JobPoolViewed {
+  userId   String
+  jobId    String
+  viewedAt DateTime @default(now())
+  user     User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  job      JobPoolJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@id([userId, jobId])
+  @@index([jobId])
+  @@map("job_pool_viewed")
 }

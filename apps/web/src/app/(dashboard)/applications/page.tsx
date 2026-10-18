@@ -11,6 +11,7 @@ import type { ApplicationOption } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
 import { STATUS_COLORS, formatStatus, formatDate, truncateText, hasRealJobUrl, cn, APPLICATION_STATUSES } from '@/lib/utils';
 import { ApplicationFormFields } from '@/components/application-form-fields';
+import { useApplicationValidation } from '@/lib/use-application-validation';
 import {
   Plus,
   Search,
@@ -407,6 +408,7 @@ function ApplicationsPageInner() {
   const [editApp, setEditApp] = useState<Application | null>(null);
   const [deleteApp, setDeleteApp] = useState<Application | null>(null);
   const [form, setForm] = useState<AppForm>(EMPTY_FORM);
+  const draftValidation = useApplicationValidation(form, showCreate);
   const [locations, setLocations] = useState<ApplicationOption[]>([]);
   const [sources, setSources] = useState<ApplicationOption[]>([]);
   const [saving, setSaving] = useState(false);
@@ -657,6 +659,7 @@ function ApplicationsPageInner() {
   };
 
   const handleCreate = async () => {
+    if (!draftValidation.canSave) { toast.error("Review the job description validation before creating an application."); return; }
     if (!form.profileId || !form.jobTitle.trim() || !form.company.trim() || !form.jobDescription.trim()) {
       toast.error('Profile, job title, company, and description are required');
       return;
@@ -1437,6 +1440,7 @@ function ApplicationsPageInner() {
                 locations={locations}
                 sources={sources}
                 onOptionsChange={loadOptions}
+                validation={draftValidation}
               />
             </div>
             <div className="flex justify-end gap-3 px-6 py-4 border-t border-slate-100 shrink-0">
@@ -1453,7 +1457,7 @@ function ApplicationsPageInner() {
               </button>
               <button
                 type="button"
-                disabled={saving}
+                disabled={saving || !draftValidation.canSave}
                 onClick={handleCreate}
                 className="px-4 py-2 text-sm font-medium text-white bg-primary rounded-lg hover:bg-primary-light disabled:opacity-50"
               >
