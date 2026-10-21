@@ -33,7 +33,7 @@ test('HTTP permissions allow all signed-in users to browse and only Master to pu
 test('service checks prevent role escalation and delegate applications to existing permission checks', async () => {
   let saved;
   const job = { id: 'job', title: 'DB title', company: 'DB company', location: 'USA', jobUrl: 'https://example.com/jobs/1', description: 'DB description', workArrangement: 'REMOTE', sourceName: 'Jobicy' };
-  const service = new JobPoolService({ jobPoolJob: { findFirst: async () => job } }, { create: async (data, user) => { saved = { data, user }; return { id: 'app' }; } });
+  const service = new JobPoolService({ systemSetting: { findUnique: async () => null }, jobPoolJob: { findFirst: async () => job } }, { create: async (data, user) => { saved = { data, user }; return { id: 'app' }; } });
   for (const role of ['ADMIN','BIDDER']) for (const operation of [() => service.addJob({role}, {}), () => service.hide({role}, 'job', {hidden:true}), () => service.sync({role}, {}), () => service.updateSettings({role}, {enabled:true}), () => service.addSource({role}, {})]) await assert.rejects(operation(), /Only Master/);
   await assert.rejects(service.apply({role:'MASTER'}, 'job', {profileId:'profile'}), /Master accounts/);
   await assert.rejects(service.apply({role:'BIDDER'}, 'job', {}), /Select one/);

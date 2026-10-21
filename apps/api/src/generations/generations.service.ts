@@ -150,6 +150,11 @@ export class GenerationsService {
         if (existing.applicationId !== applicationId || existing.creatorId !== user.id) {
           throw new ConflictException('Generation request key is already in use');
         }
+        if (existing.status === GenerationStatus.QUEUED) {
+          // Recover a request interrupted after the DB commit but before Redis
+          // accepted it. BullMQ's stable job ID deduplicates repeated delivery.
+          await this.queue.add('generate', { generationId: existing.id, applicationId, userId: user.id }, { jobId: existing.id });
+        }
         return existing;
       }
     }

@@ -219,6 +219,7 @@ model Profile {
   profilePromptAssignments ProfilePromptAssignment[]
   generationPreferences ProfileGenerationPreference[]
 
+  poolAppliedJobs JobPoolApplied[]
   @@map("profiles")
 }
 
@@ -658,13 +659,18 @@ model JobPoolJob {
 }
 
 model JobPoolApplied {
+  id        String @id @default(uuid())
   userId    String
   jobId     String
+  profileId String?
   appliedAt DateTime @default(now())
   user      User @relation(fields: [userId], references: [id], onDelete: Cascade)
   job       JobPoolJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  profile   Profile? @relation(fields: [profileId], references: [id], onDelete: SetNull)
 
-  @@id([userId, jobId])
+  @@unique([userId, jobId, profileId])
+  @@index([userId, jobId])
+  @@index([profileId])
   @@index([jobId])
   @@map("job_pool_applied")
 }

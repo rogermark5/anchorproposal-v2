@@ -151,6 +151,34 @@ export class ApplicationsService {
     });
   }
 
+  async page(user: AuthUser, query: Record<string,string|undefined>) {
+    if (Object.values(query).some(value=>value!==undefined&&typeof value!=='string')) throw new BadRequestException('Invalid application filters.');
+    const now = new Date();
+    let cursor: { at: string; id: string; asOf: string } | undefined;
+    if (query.cursor) {
+      try {
+        if (query.cursor.length > 1000) throw Error();
+        cursor = JSON.parse(Buffer.from(query.cursor,'base64url').toString());
+        if (!cursor || typeof cursor.id !== 'string' || !cursor.id.length || cursor.id.length > 100 || typeof cursor.at!=='string' || typeof cursor.asOf!=='string' || !Number.isFinite(Date.parse(cursor.at)) || !Number.isFinite(Date.parse(cursor.asOf)) || new Date(cursor.asOf) > now || new Date(cursor.at)>new Date(cursor.asOf)) throw Error();
+      } catch { throw new BadRequestException('Refresh the application list to continue.'); }
+    }
+    if (query.status && !Object.values(ApplicationStatus).includes(query.status as ApplicationStatus)) throw new BadRequestException('Choose an application status.');
+    const asOf = cursor ? new Date(cursor.asOf) : now;
+    const where: Prisma.ApplicationWhereInput = { AND: [{ bidderId:user.id }, { createdAt: { lte: asOf } },
+      ...(query.profileId ? [{profileId:query.profileId.slice(0,100)}] : []),
+      ...(query.status ? [{status:query.status as ApplicationStatus}] : []),
+      ...(query.q?.trim() ? [{OR:['jobTitle','company','location'].map(field=>({[field]:{contains:query.q!.trim().slice(0,200),mode:'insensitive' as const}}))}] : []),
+    ] };
+    const pageWhere = cursor ? {AND:[where,{OR:[{createdAt:{lt:new Date(cursor.at)}},{createdAt:new Date(cursor.at),id:{lt:cursor.id}}]}]} : where;
+    const [rows,total] = await Promise.all([this.prisma.application.findMany({where:pageWhere,take:21,orderBy:[{createdAt:'desc'},{id:'desc'}],select:{
+      id:true,jobTitle:true,company:true,location:true,status:true,profileId:true,createdAt:true,updatedAt:true,
+      profile:{select:{firstName:true,lastName:true,profileTitle:true}},
+      generations:{orderBy:{version:'desc'},take:1,select:{id:true,status:true,version:true,errorMessage:true}},
+    }}),this.prisma.application.count({where})]);
+    const apps = rows.slice(0,20), last = apps.at(-1);
+    return { applications: apps, total, asOf:asOf.toISOString(), nextCursor: rows.length>20 && last ? Buffer.from(JSON.stringify({id:last.id,at:last.createdAt.toISOString(),asOf:asOf.toISOString()})).toString('base64url') : null };
+  }
+
   async findOne(id: string, user: AuthUser) {
     const app = await this.prisma.application.findUnique({
       where: { id },
@@ -269,17 +297,27 @@ export class ApplicationsService {
   async matchingCompanies(user: AuthUser, companies: string[]) {
     const key = (name: string) => name.toLowerCase().replace(/\s/g, '');
     const wanted = new Set(companies.map(key).filter(Boolean));
-    const matches: Record<string, { id: string; company: string; jobTitle: string }[]> = Object.create(null);
+    const matches: Record<string, { id: string; company: string; jobTitle: string; profileId: string; profileName: string }[]> = Object.create(null);
     if (!wanted.size) return matches;
     const applications = await this.prisma.application.findMany({
       where: { bidderId: user.id, ...(!isAdmin(user.role) && !isMaster(user.role) ? { profile: { assignments: { some: { userId: user.id, activeTo: null } } } } : {}) },
-      select: { id: true, company: true, jobTitle: true }, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      select: { id: true, company: true, jobTitle: true, profileId: true, profile: { select: { firstName: true, lastName: true } } }, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
     });
     for (const application of applications) {
       const normalized = key(application.company);
-      if (wanted.has(normalized)) (matches[normalized] ||= []).push(application);
+      if (wanted.has(normalized)) {
+        const { profile, ...details } = application;
+        (matches[normalized] ||= []).push({ ...details, profileName: [profile?.firstName, profile?.lastName].filter(Boolean).join(' ') || 'Profile not recorded' });
+      }
     }
     return matches;
+  }
+
+  async profileForPool(profileId: string, user: AuthUser) {
+    await this.profilesService.checkAccess(profileId, user);
+    const profile = await this.prisma.profile.findFirst({ where: { id: profileId, archivedAt: null }, select: { id: true } });
+    if (!profile) throw new NotFoundException('Select an active profile you can access.');
+    return profile;
   }
 
   async update(

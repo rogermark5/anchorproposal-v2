@@ -7,7 +7,8 @@ import { AuthUser } from '../common/types/auth.types';
 import { normalizedJobUrl } from '../applications/job-url';
 import { fetchJobPage, FeedError, JOB_PROVIDERS, jobDate, MAX_IMPORT_PAGES, MIN_SYNC_MS, plainText, publicJobUrl, sourceCountries } from './job-providers';
 import { eligibleCountries, poolCountry, POOL_COUNTRIES, COUNTRY_NAMES } from './job-geography';
-import { isSoftwareJob } from './software-jobs';
+import { DEFAULT_EXCLUDED_TITLE_KEYWORDS, isSoftwareJob, isBlockedPoolTitle, normalizeTitleKeywords } from './software-jobs';
+import { jobSite } from './job-site';
 import { FREEHIRE_MAX_PAGES, FREEHIRE_SOURCES } from './freehire-feed';
 import { poolJobIdentity } from './job-identity';
 import { REMOTEJOBS_CATEGORIES, REMOTEJOBS_MAX_PAGES, postingShingles, samePostingContent, samePostingGroup } from './remotejobs-feed';
@@ -17,8 +18,16 @@ const SETTINGS_KEY = 'job_pool_settings';
 const LATEST_IMPORT_KEY = 'job_pool_latest_additions';
 const DAY = 86400_000;
 const AGGREGATORS = ['freehire', 'freehire-global', 'ocean', 'remotejobs'];
-type PoolSettings = { enabled: boolean; intervalHours: number };
+type PoolSettings = { enabled: boolean; intervalHours: number; excludedTitleKeywords: string[] };
 type ImportBatch = { id: string; startedAt: string; endsAt: string; intervalHours: number };
+const appliedSelect = { profileId: true, appliedAt: true, profile: { select: { firstName: true, lastName: true } } } as const;
+type AppliedRow = Prisma.JobPoolAppliedGetPayload<{ select: typeof appliedSelect }>;
+function appliedState(rows: AppliedRow[]) {
+  return { applied: rows.length > 0, appliedAt: rows[0]?.appliedAt || null,
+    appliedProfiles: rows.map(row => ({ profileId: row.profileId, appliedAt: row.appliedAt,
+      profileName: [row.profile?.firstName, row.profile?.lastName].filter(Boolean).join(' ') || 'Profile not recorded' })) };
+}
+const titleExclusions = (keywords: string[]): Prisma.JobPoolJobWhereInput => ({ NOT: keywords.map(term => ({ title: { contains: term, mode: 'insensitive' } })) });
 
 @Injectable()
 export class JobPoolService implements OnApplicationBootstrap, OnModuleDestroy {
@@ -37,13 +46,18 @@ export class JobPoolService implements OnApplicationBootstrap, OnModuleDestroy {
   async onModuleDestroy() { this.stopping = true; if (this.timer) clearInterval(this.timer); await this.running; }
   private master(user: AuthUser) { if (user?.role !== UserRole.MASTER) throw new ForbiddenException('Only Master can manage the Job Pool.'); }
   private configured(provider: string) { return provider !== 'usajobs' || !!(process.env.USAJOBS_API_KEY && process.env.USAJOBS_EMAIL); }
-  private available(now = new Date()): Prisma.JobPoolJobWhereInput {
-    return { hidden: false, isActive: true, isSoftware: true, workArrangement: 'REMOTE', lastSeenAt: { gte: new Date(now.getTime() - 30 * DAY) }, OR: [{ expiresAt: null }, { expiresAt: { gt: now } }] };
+  private available(now = new Date(), keywords = DEFAULT_EXCLUDED_TITLE_KEYWORDS): Prisma.JobPoolJobWhereInput {
+    return { ...titleExclusions(keywords), hidden: false, isActive: true, isSoftware: true, workArrangement: 'REMOTE', lastSeenAt: { gte: new Date(now.getTime() - 30 * DAY) }, OR: [{ expiresAt: null }, { expiresAt: { gt: now } }] };
   }
   private async settings(db: Pick<Prisma.TransactionClient, 'systemSetting'> = this.prisma): Promise<PoolSettings> {
     const row = await db.systemSetting.findUnique({ where: { key: SETTINGS_KEY } });
-    try { const data = JSON.parse(row?.value || '{}'); return { enabled: data.enabled === true, intervalHours: [1, 6, 12, 24].includes(data.intervalHours) ? data.intervalHours : 6 }; }
-    catch { return { enabled: false, intervalHours: 6 }; }
+    const defaults = { enabled: false, intervalHours: 6, excludedTitleKeywords: [...DEFAULT_EXCLUDED_TITLE_KEYWORDS] };
+    try {
+      const data = JSON.parse(row?.value || '{}');
+      let keywords = defaults.excludedTitleKeywords;
+      try { if (data.excludedTitleKeywords !== undefined) keywords = normalizeTitleKeywords(data.excludedTitleKeywords); } catch { /* Keep safe defaults for malformed saved rules. */ }
+      return { enabled: data.enabled === true, intervalHours: [1, 6, 12, 24].includes(data.intervalHours) ? data.intervalHours : 6, excludedTitleKeywords: keywords };
+    } catch { return defaults; }
   }
   private async latestImport(): Promise<ImportBatch | null> {
     const row = await this.prisma.systemSetting.findUnique({ where: { key: LATEST_IMPORT_KEY } });
@@ -75,8 +89,9 @@ export class JobPoolService implements OnApplicationBootstrap, OnModuleDestroy {
   }
   async manage(user: AuthUser, summary = false) {
     this.master(user);
-    const [settings, sources, jobGroups] = await Promise.all([this.settings(), this.prisma.jobPoolSource.findMany({ orderBy: [{ provider: 'asc' }, { name: 'asc' }] }),
-      this.prisma.jobPoolJob.groupBy({ by: ['eligibleCountries', 'sourceId'], where: this.available(), _count: { _all: true } })]);
+    const settings = await this.settings();
+    const [sources, jobGroups] = await Promise.all([this.prisma.jobPoolSource.findMany({ orderBy: [{ provider: 'asc' }, { name: 'asc' }] }),
+      this.prisma.jobPoolJob.groupBy({ by: ['eligibleCountries', 'sourceId'], where: this.available(new Date(), settings.excludedTitleKeywords), _count: { _all: true } })]);
     const coverage = POOL_COUNTRIES.map(country => {
       const monitored = sources.filter(source => source.enabled && this.configured(source.provider) && sourceCountries(source).includes(country));
       const matches = jobGroups.filter(group => group.eligibleCountries.includes(country));
@@ -95,16 +110,29 @@ export class JobPoolService implements OnApplicationBootstrap, OnModuleDestroy {
         nextManualSyncAt: source.lastAttemptAt ? new Date(source.lastAttemptAt.getTime() + MIN_SYNC_MS) : null })) } : {}) };
   }
   async updateSettings(user: AuthUser, body: Record<string, unknown>) {
-    this.master(user); const settings = await this.settings();
-    if (body.enabled !== undefined) { if (typeof body.enabled !== 'boolean') throw new BadRequestException('Choose whether automatic imports are enabled.'); settings.enabled = body.enabled; }
-    if (body.intervalHours !== undefined) { if (![1, 6, 12, 24].includes(body.intervalHours as number)) throw new BadRequestException('Choose an import interval of 1, 6, 12 or 24 hours.'); settings.intervalHours = body.intervalHours as number; }
-    await this.prisma.systemSetting.upsert({ where: { key: SETTINGS_KEY }, create: { key: SETTINGS_KEY, value: JSON.stringify(settings) }, update: { value: JSON.stringify(settings) } });
+    this.master(user);
+    const patch: Partial<PoolSettings> = {};
+    if (body.enabled !== undefined) { if (typeof body.enabled !== 'boolean') throw new BadRequestException('Choose whether automatic imports are enabled.'); patch.enabled = body.enabled; }
+    if (body.intervalHours !== undefined) { if (![1, 6, 12, 24].includes(body.intervalHours as number)) throw new BadRequestException('Choose an import interval of 1, 6, 12 or 24 hours.'); patch.intervalHours = body.intervalHours as number; }
+    if (body.excludedTitleKeywords !== undefined) {
+      try { patch.excludedTitleKeywords = normalizeTitleKeywords(body.excludedTitleKeywords); }
+      catch (error) { throw new BadRequestException((error as Error).message); }
+    }
+    const settings = await this.prisma.$transaction(async tx => {
+      // Concurrent keyword and interval edits must preserve each other's fields.
+      await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${SETTINGS_KEY}, 0))::text`;
+      const next = { ...await this.settings(tx), ...patch };
+      await tx.systemSetting.upsert({ where: { key: SETTINGS_KEY }, create: { key: SETTINGS_KEY, value: JSON.stringify(next) }, update: { value: JSON.stringify(next) } });
+      return next;
+    });
     // A shorter interval should take effect for previously scheduled sources too.
     if (settings.enabled) {
-      const sources = await this.prisma.jobPoolSource.findMany({ where: { enabled: true } });
-      for (const source of sources) {
-        const next = new Date((source.lastAttemptAt?.getTime() || 0) + settings.intervalHours * MIN_SYNC_MS);
-        if (!source.lastError && next < source.nextSyncAt) await this.prisma.jobPoolSource.update({ where: { id: source.id }, data: { nextSyncAt: next } });
+      if (patch.intervalHours !== undefined || patch.enabled === true) {
+        const sources = await this.prisma.jobPoolSource.findMany({ where: { enabled: true } });
+        for (const source of sources) {
+          const next = new Date((source.lastAttemptAt?.getTime() || 0) + settings.intervalHours * MIN_SYNC_MS);
+          if (!source.lastError && next < source.nextSyncAt) await this.prisma.jobPoolSource.update({ where: { id: source.id }, data: { nextSyncAt: next } });
+        }
       }
       void this.startWorker();
     }
@@ -170,7 +198,7 @@ export class JobPoolService implements OnApplicationBootstrap, OnModuleDestroy {
       provider: lane === 'boards' ? { notIn: AGGREGATORS } : { in: AGGREGATORS },
       ...(settings.enabled ? {} : { queued: true }), OR: [{ lockedUntil: null }, { lockedUntil: { lte: now } }] }, orderBy: { nextSyncAt: 'asc' }, take: 1000 });
     if (!sources.length) return;
-    const before = await this.prisma.jobPoolJob.count({ where: this.available() });
+    const before = await this.prisma.jobPoolJob.count({ where: this.available(now, settings.excludedTitleKeywords) });
     // A new direct board may replace an aggregate-feed presentation URL. Load
     // aliases once per batch so the existing job ID and applied marks survive.
     const boardAliases = new Map<string, string>();
@@ -224,8 +252,10 @@ export class JobPoolService implements OnApplicationBootstrap, OnModuleDestroy {
               data: { lockedUntil: new Date(Date.now() + 20 * 60_000) } });
             if (!renewed.count) break;
             const result = await fetchJobPage(source, cursor, undefined, url => primaryJobs.has(poolJobIdentity(url)));
+            const { excludedTitleKeywords } = await this.settings();
             for (const job of result.jobs) {
               if (this.stopping) break;
+              if (!isSoftwareJob(job.title, job.description, excludedTitleKeywords)) continue;
               const identity = poolJobIdentity(job.jobUrl);
               if (AGGREGATORS.includes(source.provider) && primaryJobs.has(identity)) continue;
               const group = source.provider === 'remotejobs' ? samePostingGroup(job.company, job.title) : '';
@@ -243,7 +273,10 @@ export class JobPoolService implements OnApplicationBootstrap, OnModuleDestroy {
               const canonicalUrl = aliases.get(identity) || (PUBLIC_CAREER_PROVIDERS.includes(source.provider) ? boardAliases.get(identity) : undefined) || contentMatch?.canonicalUrl || normalizedJobUrl(job.jobUrl)!;
               const data = { ...job, canonicalUrl, sourceId: source.id, lastSeenAt: started, isSoftware: true, isActive: !job.expiresAt || job.expiresAt > started };
               const postedAt = job.publishedAt || started;
-              await this.saveImportedJob({ ...data, postedAt }, { ...data, ...(job.publishedAt ? { postedAt } : {}) });
+              const { publishedAt, ...update } = data;
+              // A response without a date must not erase a previously supplied
+              // source timestamp or replace it with this import's arrival time.
+              await this.saveImportedJob({ ...data, postedAt }, { ...update, ...(publishedAt ? { publishedAt, postedAt } : {}) });
               aliases.set(identity, canonicalUrl);
               if (PUBLIC_CAREER_PROVIDERS.includes(source.provider)) boardAliases.set(identity, canonicalUrl);
               if (group && !contentMatch) { const matches = contentMatches.get(group) || []; if (!matches.some(saved => saved.canonicalUrl === canonicalUrl)) matches.push({canonicalUrl, preferred: false}); contentMatches.set(group, matches); }
@@ -272,11 +305,11 @@ export class JobPoolService implements OnApplicationBootstrap, OnModuleDestroy {
         }
       }
     }));
-    const after = await this.prisma.jobPoolJob.count({ where: this.available() });
+    const after = await this.prisma.jobPoolJob.count({ where: this.available(new Date(), (await this.settings()).excludedTitleKeywords) });
     this.logger.log(`${lane === 'boards' ? 'Employer boards' : 'Aggregate feeds'}: ${stats.checked} sources checked, ${stats.processed} matching listings processed, ${stats.retries} sources need retry; ${after} jobs available (${after >= before ? '+' : ''}${after - before}).`);
   }
-  private jobFilters(user: AuthUser, query: Record<string, string | undefined>, asOf: Date, availableAt = new Date()): Prisma.JobPoolJobWhereInput {
-    const where: Prisma.JobPoolJobWhereInput = { ...this.available(availableAt), ...(user.role === 'MASTER' && query.includeHidden === 'true' ? { hidden: undefined } : {}) };
+  private jobFilters(user: AuthUser, query: Record<string, string | undefined>, asOf: Date, availableAt = new Date(), keywords = DEFAULT_EXCLUDED_TITLE_KEYWORDS): Prisma.JobPoolJobWhereInput {
+    const where: Prisma.JobPoolJobWhereInput = { ...this.available(availableAt, keywords), ...(user.role === 'MASTER' && query.includeHidden === 'true' ? { hidden: undefined } : {}) };
     if (query.q?.trim()) where.AND = [{ OR: ['title', 'company', 'location', 'description'].map(field => ({ [field]: { contains: query.q!.trim().slice(0, 200), mode: 'insensitive' } })) }];
     if (query.sourceId) where.sourceId = query.sourceId;
     if (query.site) {
@@ -292,8 +325,8 @@ export class JobPoolService implements OnApplicationBootstrap, OnModuleDestroy {
       where.eligibleCountries = { has: country };
     }
     if (query.days && query.days !== 'all') {
-      if (!['1', '3', '7', '14', '30'].includes(query.days)) throw new BadRequestException('Choose a valid added date filter.');
-      where.createdAt = { gte: new Date(asOf.getTime() - Number(query.days) * DAY), lte: asOf };
+      if (!['1', '3', '7', '14', '30'].includes(query.days)) throw new BadRequestException('Choose a valid posting time filter.');
+      where.publishedAt = { gte: new Date(asOf.getTime() - Number(query.days) * DAY), lte: asOf };
     }
     const status = query.status || 'not-applied';
     if (!['all', 'applied', 'not-applied'].includes(status)) throw new BadRequestException('Choose a valid applied status.');
@@ -303,58 +336,71 @@ export class JobPoolService implements OnApplicationBootstrap, OnModuleDestroy {
   async updates(user: AuthUser, query: Record<string, string | undefined>) {
     const now = new Date(), since = query.since && query.since.length <= 80 ? jobDate(query.since) : null;
     if (!since || since > now) throw new BadRequestException('Refresh the job list to check for new imports.');
-    const where = this.jobFilters(user, query, now);
+    const where = this.jobFilters(user, query, now, now, (await this.settings()).excludedTitleKeywords);
     const [total, newCount, latestImport] = await Promise.all([this.prisma.jobPoolJob.count({where}), this.prisma.jobPoolJob.count({where: {AND: [where, {createdAt: {gt: since, lte: now}}]}}), this.latestImport()]);
     return {total, newCount, checkedAt: now.toISOString(), latestImport};
   }
   async list(user: AuthUser, query: Record<string, string | undefined>) {
     const limit = 20, now = new Date();
-    let cursor: { at: string; id: string; asOf: string } | undefined;
+    const { excludedTitleKeywords } = await this.settings();
+    let cursor: { v: number; at: string | null; id: string; asOf: string } | undefined;
     if (query.cursor) {
       try {
         if (query.cursor.length > 1000) throw Error();
         cursor = JSON.parse(Buffer.from(query.cursor, 'base64url').toString());
-        if (!cursor || typeof cursor.id !== 'string' || cursor.id.length > 100 || !jobDate(cursor.at) || !jobDate(cursor.asOf) || new Date(cursor.asOf) > now) throw Error();
+        if (!cursor || cursor.v !== 2 || typeof cursor.id !== 'string' || !cursor.id || cursor.id.length > 100 || (cursor.at !== null && (typeof cursor.at !== 'string' || !jobDate(cursor.at))) || !jobDate(cursor.asOf) || new Date(cursor.asOf) > now) throw Error();
       } catch { throw new BadRequestException('Invalid job cursor. Refresh the job list.'); }
     }
     const asOf = cursor ? new Date(cursor.asOf) : now;
-    const where: Prisma.JobPoolJobWhereInput = { AND: [this.jobFilters(user, query, asOf, now), { createdAt: { lte: asOf } }] };
+    const where: Prisma.JobPoolJobWhereInput = { AND: [this.jobFilters(user, query, asOf, now, excludedTitleKeywords), { createdAt: { lte: asOf } }] };
     const filters = (where.AND || []) as Prisma.JobPoolJobWhereInput[];
-    const pageWhere = cursor ? { ...where, AND: [...filters, { OR: [{ createdAt: { lt: new Date(cursor.at) } }, { createdAt: new Date(cursor.at), id: { lt: cursor.id } }] }] } : where;
-    const include = { appliedBy: { where: { userId: user.id }, select: { appliedAt: true } }, viewedBy: { where: { userId: user.id }, select: { viewedAt: true } } };
+    const pageWhere = cursor ? { ...where, AND: [...filters, cursor.at === null ? { publishedAt: null, id: { lt: cursor.id } } :
+      { OR: [{ publishedAt: { lt: new Date(cursor.at) } }, { publishedAt: new Date(cursor.at), id: { lt: cursor.id } }, { publishedAt: null }] }] } : where;
+    const include = { source: { select: { provider: true } }, appliedBy: { where: { userId: user.id }, select: appliedSelect, orderBy: { appliedAt: 'asc' as const } }, viewedBy: { where: { userId: user.id }, select: { viewedAt: true } } };
     const [jobs, total, latestImport] = await Promise.all([
-      this.prisma.jobPoolJob.findMany({ where: pageWhere, take: limit + 1, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }], include }),
+      this.prisma.jobPoolJob.findMany({ where: pageWhere, take: limit + 1, orderBy: [{ publishedAt: { sort: 'desc', nulls: 'last' } }, { id: 'desc' }], include }),
       this.prisma.jobPoolJob.count({ where }),
       this.latestImport(),
     ]);
     const visible = jobs.slice(0, limit), last = visible.at(-1);
     const matches = await this.applications.matchingCompanies(user, visible.map(job => job.company));
-    return { asOf: asOf.toISOString(), latestImport, jobs: visible.map(({ appliedBy, viewedBy, description, ...job }) => ({ ...job, companyMatches: matches[job.company.toLowerCase().replace(/\s/g, '')] || [], applied: appliedBy.length > 0, appliedAt: appliedBy[0]?.appliedAt || null, viewed: viewedBy.length > 0, viewedAt: viewedBy[0]?.viewedAt || null })), total,
-      nextCursor: jobs.length > limit && last ? Buffer.from(JSON.stringify({ at: last.createdAt.toISOString(), id: last.id, asOf: asOf.toISOString() })).toString('base64url') : null,
+    return { asOf: asOf.toISOString(), latestImport, jobs: visible.map(({ appliedBy, viewedBy, source, description, ...job }) => ({ ...job, site: jobSite(job.jobUrl, source?.provider), companyMatches: matches[job.company.toLowerCase().replace(/\s/g, '')] || [], ...appliedState(appliedBy), viewed: viewedBy.length > 0, viewedAt: viewedBy[0]?.viewedAt || null })), total,
+      nextCursor: jobs.length > limit && last ? Buffer.from(JSON.stringify({ v: 2, at: last.publishedAt?.toISOString() || null, id: last.id, asOf: asOf.toISOString() })).toString('base64url') : null,
       sites: [...JOB_PROVIDERS.map(({id, name}) => ({id, name})), {id: 'manual', name: 'Added by Master'}] };
   }
   async detail(id: string, user: AuthUser) {
-    const job = await this.prisma.jobPoolJob.findFirst({ where: { id, ...(user.role === 'MASTER' ? { workArrangement: 'REMOTE', isSoftware: true } : this.available()) }, include: { appliedBy: { where: { userId: user.id }, select: { appliedAt: true } }, viewedBy: { where: { userId: user.id }, select: { viewedAt: true } } } });
+    const { excludedTitleKeywords } = await this.settings();
+    const job = await this.prisma.jobPoolJob.findFirst({ where: { id, ...(user.role === 'MASTER' ? { ...titleExclusions(excludedTitleKeywords), workArrangement: 'REMOTE', isSoftware: true } : this.available(new Date(), excludedTitleKeywords)) }, include: { source: { select: { provider: true } }, appliedBy: { where: { userId: user.id }, select: appliedSelect, orderBy: { appliedAt: 'asc' } }, viewedBy: { where: { userId: user.id }, select: { viewedAt: true } } } });
     if (!job) throw new NotFoundException('This job is no longer available.');
-    const { appliedBy, viewedBy, ...data } = job;
+    const { appliedBy, viewedBy, source, ...data } = job;
     const matches = await this.applications.matchingCompanies(user, [job.company]);
-    return { ...data, companyMatches: matches[job.company.toLowerCase().replace(/\s/g, '')] || [], applied: appliedBy.length > 0, appliedAt: appliedBy[0]?.appliedAt || null, viewed: viewedBy.length > 0, viewedAt: viewedBy[0]?.viewedAt || null };
+    return { ...data, site: jobSite(job.jobUrl, source?.provider), companyMatches: matches[job.company.toLowerCase().replace(/\s/g, '')] || [], ...appliedState(appliedBy), viewed: viewedBy.length > 0, viewedAt: viewedBy[0]?.viewedAt || null };
   }
   async markViewed(user: AuthUser, id: string) {
-    const job = await this.prisma.jobPoolJob.findFirst({ where: { id, ...(user.role === 'MASTER' ? { workArrangement: 'REMOTE', isSoftware: true } : this.available()) }, select: { id: true } });
+    const { excludedTitleKeywords } = await this.settings();
+    const job = await this.prisma.jobPoolJob.findFirst({ where: { id, ...(user.role === 'MASTER' ? { ...titleExclusions(excludedTitleKeywords), workArrangement: 'REMOTE', isSoftware: true } : this.available(new Date(), excludedTitleKeywords)) }, select: { id: true } });
     if (!job) throw new NotFoundException('This job is no longer available.');
     const row = await this.prisma.jobPoolViewed.upsert({ where: { userId_jobId: { userId: user.id, jobId: id } }, create: { userId: user.id, jobId: id }, update: {} });
     return { viewed: true as const, viewedAt: row.viewedAt };
   }
   async markApplied(user: AuthUser, id: string, body: Record<string, unknown>) {
     if (typeof body.applied !== 'boolean') throw new BadRequestException('Choose whether you have applied to this job.');
+    if (body.profileId !== undefined && body.profileId !== null && (typeof body.profileId !== 'string' || !body.profileId.trim() || body.profileId.length > 100)) throw new BadRequestException('Choose a valid profile.');
     await this.detail(id, user);
-    if (body.applied) {
-      const row = await this.prisma.jobPoolApplied.upsert({ where: { userId_jobId: { userId: user.id, jobId: id } }, create: { userId: user.id, jobId: id }, update: {} });
-      return { applied: true, appliedAt: row.appliedAt };
-    }
-    await this.prisma.jobPoolApplied.deleteMany({ where: { userId: user.id, jobId: id } });
-    return { applied: false, appliedAt: null };
+    const profileId = typeof body.profileId === 'string' && body.profileId.length <= 100 ? body.profileId.trim() : null;
+    if (body.applied && !profileId) throw new BadRequestException('Select the profile you used to apply.');
+    if (body.applied) await this.applications.profileForPool(profileId!, user);
+    return this.prisma.$transaction(async tx => {
+      await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${'pool-applied:' + user.id + ':' + id}, 0))::text`;
+      if (body.applied) {
+        await tx.jobPoolApplied.upsert({ where: { userId_jobId_profileId: { userId: user.id, jobId: id, profileId: profileId! } }, create: { userId: user.id, jobId: id, profileId }, update: {} });
+      } else {
+        // A profile-specific undo never clears another profile's mark. A NULL
+        // profile removes only legacy marks whose profile was not recorded.
+        await tx.jobPoolApplied.deleteMany({ where: { userId: user.id, jobId: id, profileId } });
+      }
+      return appliedState(await tx.jobPoolApplied.findMany({ where: { userId: user.id, jobId: id }, select: appliedSelect, orderBy: { appliedAt: 'asc' } }));
+    });
   }
   async addJob(user: AuthUser, body: Record<string, unknown>) {
     this.master(user);
@@ -363,7 +409,9 @@ export class JobPoolService implements OnApplicationBootstrap, OnModuleDestroy {
     const jobUrl = publicJobUrl(body.jobUrl);
     const countries = eligibleCountries(location, undefined, description);
     if (!title || !company || !description || !jobUrl || !countries.length) throw new BadRequestException('Enter a title, company, eligible US, UK or Ireland location, description and a valid public HTTP or HTTPS job URL.');
-    if (!isSoftwareJob(title, description)) throw new BadRequestException('Only software jobs can be published. Use a specific software, development, data, QA, cloud or DevOps job title.');
+    const { excludedTitleKeywords } = await this.settings();
+    if (isBlockedPoolTitle(title, excludedTitleKeywords)) throw new BadRequestException('This title contains an excluded keyword. Review the Master title keyword settings.');
+    if (!isSoftwareJob(title, description, excludedTitleKeywords)) throw new BadRequestException('Only software jobs can be published. Use a specific software, development, data, QA, cloud or DevOps job title.');
     const expiresAt = body.expiresAt ? jobDate(body.expiresAt) : new Date(Date.now() + 30 * DAY);
     if (!expiresAt || expiresAt <= new Date()) throw new BadRequestException('Choose an expiration date in the future.');
     const canonicalUrl = normalizedJobUrl(jobUrl)!;
@@ -378,7 +426,7 @@ export class JobPoolService implements OnApplicationBootstrap, OnModuleDestroy {
   async apply(user: AuthUser, id: string, body: Record<string, unknown>) {
     if (!['ADMIN', 'BIDDER'].includes(user.role)) throw new ForbiddenException('Master accounts manage jobs; Admin and Bidder accounts create applications.');
     if (typeof body.profileId !== 'string' || !body.profileId.trim()) throw new BadRequestException('Select one of your profiles.');
-    const job = await this.prisma.jobPoolJob.findFirst({ where: { id, ...this.available() } });
+    const job = await this.prisma.jobPoolJob.findFirst({ where: { id, ...this.available(new Date(), (await this.settings()).excludedTitleKeywords) } });
     if (!job) throw new NotFoundException('This job is no longer available.');
     // Use saved job data and the existing application permission / warning checks.
     return this.applications.create({ profileId: body.profileId, jobTitle: job.title, company: job.company, location: job.location,

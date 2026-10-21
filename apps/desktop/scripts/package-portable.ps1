@@ -32,5 +32,8 @@ $compiler = Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'
 $executable = Join-Path $outputDirectory 'AnchorProposal.exe'
 & $compiler /nologo /target:winexe /platform:x64 /optimize+ /reference:System.Windows.Forms.dll /reference:System.Drawing.dll /reference:System.IO.Compression.dll /reference:System.Core.dll "/win32icon:$desktopRoot\assets\icon.ico" "/resource:$payloadPath,AnchorPayload" "/out:$executable" $sourcePath
 if ($LASTEXITCODE -ne 0) { throw 'Portable launcher compilation failed.' }
-[pscustomobject]@{ Version = $version; BuildHash = $payloadHash; ExecutableHash = $executableHash; AppHash = $appHash; Portable = $executable; Bytes = (Get-Item -LiteralPath $executable).Length } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $buildDirectory 'portable-build.json')
+$metadata = [pscustomobject]@{ Version = $version; BuildHash = $payloadHash; ExecutableHash = $executableHash; AppHash = $appHash; Portable = $executable; Bytes = (Get-Item -LiteralPath $executable).Length } | ConvertTo-Json
+$metadataPath = Join-Path $buildDirectory 'portable-build.json'
+[IO.File]::WriteAllText(($metadataPath + '.new'), $metadata, (New-Object Text.UTF8Encoding($false)))
+Move-Item -LiteralPath ($metadataPath + '.new') -Destination $metadataPath -Force
 Write-Output "Fast portable executable: $executable"

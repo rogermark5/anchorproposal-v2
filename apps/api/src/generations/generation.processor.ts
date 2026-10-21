@@ -7,7 +7,7 @@ import { GenerationStatus } from '@prisma/client';
 import type { GenerationOutput } from '@anchorproposal/shared';
 import { parseExperienceTitleMode } from './experience-title-mode';
 
-@Processor('resume-generation')
+@Processor('resume-generation', { concurrency: 3 })
 export class GenerationProcessor extends WorkerHost {
   constructor(
     private prisma: PrismaService,

@@ -2,8 +2,9 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { ArrowRight, Check, Cloud, Download, FileCheck2, Keyboard, LoaderCircle, Monitor, RefreshCw, ShieldCheck, Sparkles } from 'lucide-react';
+import { ArrowRight, Check, Chrome, Cloud, Download, FileCheck2, Keyboard, LoaderCircle, Monitor, RefreshCw, ShieldCheck, Sparkles } from 'lucide-react';
 import { BrandMark } from './brand-mark';
+import { ChromeExtensionInstall } from './chrome-extension-install';
 import { useAuth } from '@/lib/auth-context';
 import { api, type DesktopRelease } from '@/lib/api';
 import styles from './desktop-download.module.css';
@@ -61,7 +62,8 @@ export function DesktopDownload() {
       <Link className={styles.backLink} href={user ? '/dashboard' : '/login'}>{user ? 'Back to workspace' : 'Sign in'} <ArrowRight size={16}/></Link>
     </header>
     <main className={styles.main}>
-      <section className={styles.hero} aria-labelledby="download-title">
+      <nav className={styles.platformNav} aria-label="Choose an app"><a href="#windows-app"><Monitor size={17}/>Windows app</a><a href="#chrome-extension"><Chrome size={17}/>Install Chrome extension <ArrowRight size={15}/></a></nav>
+      <section id="windows-app" className={styles.hero} aria-labelledby="download-title">
         <div className={styles.intro}>
           <span className={styles.eyebrow}><span/> ANCHORPROPOSAL FOR WINDOWS</span>
           <h1 id="download-title">Your next move.<br/><span>One shortcut away.</span></h1>
@@ -95,6 +97,7 @@ export function DesktopDownload() {
         </aside>
       </section>
 
+      <ChromeExtensionInstall/>
       <section className={styles.versionHistory} aria-labelledby="versions-title">
         <div className={styles.historyHeading}><div><span className={styles.eyebrow}>RELEASE HISTORY</span><h2 id="versions-title">All versions</h2><p>Choose any published release for Windows.</p></div>{user?.role === 'MASTER' && <Link href="/settings#desktop">Manage releases <ArrowRight size={15}/></Link>}</div>
         {!versions.length ? <p className={styles.historyEmpty}>{error ? 'Version history could not be loaded. Use Check again above to retry.' : !release ? 'Loading versions…' : 'No version history has been published yet.'}</p> : <div className={styles.versionList}>{versions.map(version => <article key={version.id} className={styles.version} aria-label={`Version ${version.version}`}>
@@ -109,6 +112,6 @@ export function DesktopDownload() {
       <section className={styles.features} aria-label="Desktop features">{features.map(({ icon: Icon, title, description }) => <article key={title}><div className={styles.featureIcon}><Icon size={22}/></div><h2>{title}</h2><p>{description}</p></article>)}</section>
       <section className={styles.setup} aria-labelledby="setup-title"><div><span className={styles.eyebrow}>READY IN THREE STEPS</span><h2 id="setup-title">Make room for a simpler routine.</h2></div><ol><li><span>01</span><div><Monitor size={19}/><h3>{packageType === 'setup' ? 'Install the app' : 'Open the app'}</h3><p>{packageType === 'setup' ? 'Run AnchorProposal-Setup.exe and follow the installer.' : 'Run AnchorProposal.exe from a folder you’ll keep.'} There’s no local server to install.</p></div></li><li><span>02</span><div><ShieldCheck size={19}/><h3>Sign in</h3><p>Use your existing account or create one. Your server address is already filled in.</p></div></li><li><span>03</span><div><FileCheck2 size={19}/><h3>Create your next application</h3><p>Press Ctrl + Shift + Z, paste the job description, and get started.</p></div></li></ol></section>
     </main>
-    <footer className={styles.footer}><span>AnchorProposal Desktop</span><Link href={user ? '/dashboard' : '/register'}>{user ? 'Continue in your browser' : 'Create an account'} <ArrowRight size={14}/></Link></footer>
+    <footer className={styles.footer}><span>AnchorProposal apps &amp; extensions</span><Link href={user ? '/dashboard' : '/register'}>{user ? 'Continue in your browser' : 'Create an account'} <ArrowRight size={14}/></Link></footer>
   </div>;
 }

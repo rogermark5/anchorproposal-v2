@@ -4,6 +4,7 @@ export interface DesktopBridge {
   download(id: string, filename?: string): Promise<unknown>;
   upload(route: string, file: { name: string; type: string; bytes: ArrayBuffer }): Promise<any>;
   publicRequest(route: string): Promise<any>;
+  poolDefaults?(): Promise<{country:string;days:string;applied:string}>;
 }
 
 export function desktopBridge(): DesktopBridge | undefined {
