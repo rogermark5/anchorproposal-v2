@@ -1,0 +1,27 @@
+{
+  "name": "@anchorproposal/extension",
+  "version": "0.2.5",
+  "private": true,
+  "description": "AnchorProposal per-tab resume generation, previews and automatic document downloads",
+  "scripts": {
+    "build": "node scripts/build.cjs",
+    "typecheck": "tsc --noEmit",
+    "test": "node --test test/*.test.cjs",
+    "test:browser": "node test/browser.cjs",
+    "test:job-pool-browser": "node test/job-pool-browser.cjs",
+    "test:install": "node test/install-page.cjs",
+    "test:focus-browser": "node test/focus-browser.cjs",
+    "test:capture-browser": "node test/capture-browser.cjs"
+  },
+  "dependencies": {
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
+    "lucide-react": "^0.469.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.0.2",
+    "@types/react-dom": "^19.0.2",
+    "typescript": "^5.7.2",
+    "esbuild": "0.28.2"
+  }
+}

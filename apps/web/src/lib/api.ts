@@ -20,19 +20,21 @@ export type GenerationDocumentPreview = { html: string; pageSize: string; coverL
 export type UserRole = 'MASTER' | 'ADMIN' | 'BIDDER';
 
 export type PoolJob = { id: string; title: string; company: string; location: string; description?: string; jobUrl: string;
-  createdAt: string; addedBatchId: string | null; companyMatches?: { id: string; company: string; jobTitle: string }[];
+  createdAt: string; addedBatchId: string | null; site?: { id: string; name: string }; companyMatches?: { id: string; company: string; jobTitle: string; profileId: string; profileName: string }[];
+  appliedProfiles: PoolAppliedProfile[];
   viewed: boolean; viewedAt: string | null;
   eligibleCountries?: ('US' | 'GB' | 'IE')[];
   sourceId: string | null; sourceName: string; salary: string | null; employmentType: string | null;
   workArrangement: 'REMOTE' | 'HYBRID' | 'ONSITE' | 'UNKNOWN'; publishedAt: string | null; postedAt: string; expiresAt: string | null; hidden: boolean; applied: boolean; appliedAt: string | null };
 export type PoolSource = { id: string; provider: string; name: string; boardToken: string; enabled: boolean; queued: boolean;
   running: boolean; configured: boolean; lastAttemptAt?: string | null; lastSyncedAt: string | null; nextSyncAt: string; nextManualSyncAt: string | null; lastError: string | null; lastCount: number };
-export type PoolManagement = { settings: { enabled: boolean; intervalHours: number }; sources: PoolSource[];
+export type PoolManagement = { settings: { enabled: boolean; intervalHours: number; excludedTitleKeywords: string[] }; sources: PoolSource[];
   sourceTarget?: number;
   sourceStats?: { totalSources:number; enabledSources:number; checkedSources:number; matchingSources:number; pendingSources:number; runningSources:number; retrySources:number; importing:boolean };
   coverage?: { country: 'US' | 'GB' | 'IE'; name: string; target: number; monitoredSources: number; successfullyReadSources: number; matchingSources: number; availableJobs: number }[];
   providers: { id: string; name: string; board: boolean; docs: string; configured: boolean; choices?: string[] }[] };
 export type PoolImportBatch = { id: string; startedAt: string; endsAt: string; intervalHours: number };
+export type PoolAppliedProfile = { profileId: string | null; profileName: string; appliedAt: string };
 export type PoolListing = { asOf?: string; latestImport: PoolImportBatch | null; jobs: PoolJob[]; total: number; nextCursor: string | null; sites: { id: string; name: string }[] };
 export type ApplicationValidation = { warnings: { category: string; matchedText: string; severity: string; behavior: string }[]; allowed: boolean; requiresConfirmation: boolean; requiresAdminReview: boolean };
 export type PoolUpdates = { total: number; newCount: number; checkedAt: string; latestImport: PoolImportBatch | null };
@@ -904,7 +906,7 @@ class ApiClient {
 
   getJobPool(params: Record<string, string> = {}) { return this.request<PoolListing>(`/job-pool?${new URLSearchParams(params)}`); }
   getPoolUpdates(params: Record<string, string>) { return this.request<PoolUpdates>(`/job-pool/updates?${new URLSearchParams(params)}`); }
-  markPoolJobApplied(id: string, applied: boolean) { return this.request<{ applied: boolean; appliedAt: string | null }>(`/job-pool/jobs/${id}/applied`, { method: 'PATCH', body: JSON.stringify({ applied }) }); }
+  markPoolJobApplied(id: string, applied: boolean, profileId: string | null) { return this.request<{ applied: boolean; appliedAt: string | null; appliedProfiles: PoolAppliedProfile[] }>(`/job-pool/jobs/${id}/applied`, { method: 'PATCH', body: JSON.stringify({ applied, profileId }) }); }
   markPoolJobViewed(id: string) { return this.request<{ viewed: true; viewedAt: string }>(`/job-pool/jobs/${id}/viewed`, { method: 'PATCH', body: '{}' }); }
   getPoolJob(id: string) { return this.request<PoolJob>(`/job-pool/jobs/${id}`); }
   getPoolManagement() { return this.request<PoolManagement>('/job-pool/manage'); }

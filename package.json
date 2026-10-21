@@ -2,6 +2,8 @@
   "name": "anchorproposal",
   "private": true,
   "scripts": {
+    "build:extension": "pnpm --filter @anchorproposal/extension build",
+    "test:extension": "pnpm --filter @anchorproposal/extension test",
     "desktop": "pnpm --filter @anchorproposal/desktop start",
     "build:desktop": "pnpm --filter @anchorproposal/desktop build",
     "package:desktop": "pnpm --filter @anchorproposal/desktop package:win",

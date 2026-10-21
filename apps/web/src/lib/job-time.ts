@@ -10,3 +10,13 @@ export function jobTimeAgo(value: string, now = Date.now()): string {
   const days = Math.floor(hours / 24);
   return `${days} ${days === 1 ? 'day' : 'days'} ago`;
 }
+
+export function compareSourcePostingTime(a: { publishedAt: string | null; id: string }, b: { publishedAt: string | null; id: string }): number {
+  const first = a.publishedAt ? Date.parse(a.publishedAt) : NaN;
+  const second = b.publishedAt ? Date.parse(b.publishedAt) : NaN;
+  if (!Number.isFinite(first) || !Number.isFinite(second)) {
+    if (Number.isFinite(first)) return -1;
+    if (Number.isFinite(second)) return 1;
+  } else if (first !== second) return second - first;
+  return b.id.localeCompare(a.id);
+}

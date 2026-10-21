@@ -26,7 +26,7 @@ const navItems = [
   { href: '/templates', label: 'Templates', icon: Palette },
   { href: '/users', label: 'Users', icon: UserCog, staffOnly: true },
   { href: '/settings', label: 'Settings', icon: Settings },
-  { href: '/download', label: 'Windows app', icon: MonitorDown },
+  { href: '/download', label: 'Apps & extensions', icon: MonitorDown },
 ];
 
 type SidebarProps = {

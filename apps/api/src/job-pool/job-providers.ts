@@ -1,5 +1,5 @@
 import { WorkArrangement } from '@prisma/client';
-import { isSoftwareJob, mayBeSoftwareJob } from './software-jobs';
+import { isSoftwareOccupation as isSoftwareJob, mayBeSoftwareOccupation as mayBeSoftwareJob } from './software-jobs';
 import { freehireCursor, FREEHIRE_SOURCES, freehireNext, freehireUrl } from './freehire-feed';
 import { REMOTEJOBS_CATEGORIES, remotejobsCountries, remotejobsUrl } from './remotejobs-feed';
 import { eligibleCountries, COUNTRY_NAMES, POOL_COUNTRIES, PoolCountry, poolCountry, unrestrictedWorldwide } from './job-geography';

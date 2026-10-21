@@ -39,10 +39,8 @@ html,body,#root{margin:0;height:100%;overflow:hidden}body{background:#0b1019;col
   color: var(--muted);
 }
 
-/* Job state backgrounds stay light and identifiable inside the dark workspace. */
-.desktop-page article[data-job-state] [class~="text-slate-600"],
-.desktop-page article[data-job-state] [class~="text-slate-700"] { color:#475569!important; }
-.desktop-page article[data-job-state] [class~="text-primary-deep"] { color:#07565b!important; }
-.desktop-page article[data-job-state] [class~="bg-white"] { background:#fff!important; color:#334155!important; border-color:#cbd5e1!important; }
-.desktop-page article[data-job-state] [class~="bg-white"]:hover { background:#f8fafc!important; }
-.desktop-page article[data-job-state] [class~="bg-primary"] { background:#0b777a!important; color:#fff!important; }
+/* Status colors live on badges; job rows follow the workspace surface. */
+.desktop-page article[data-job-state] { background:#111d29!important; }
+.desktop-page article[data-job-state]:hover, .desktop-page article[data-job-state]:focus-within { background:#192a38!important; }
+.desktop-page article[data-job-state] button[title] { color:#9ce7d5!important; }
+.desktop-page [aria-label$="site logo"] { background:#fff!important; border-color:#d4e5e6!important; }

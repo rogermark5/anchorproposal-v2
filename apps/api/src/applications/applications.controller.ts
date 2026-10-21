@@ -21,6 +21,11 @@ export class ApplicationsController {
     return this.applicationsService.findAll(req.user, { status, profileId, q, scope, limit: limit ? Number(limit) : undefined });
   }
 
+  @Get('page')
+  page(@Req() req: { user: AuthUser }, @Query() query: Record<string,string|undefined>) {
+    return this.applicationsService.page(req.user, query);
+  }
+
   @Get(':id')
   findOne(@Param('id') id: string, @Req() req: { user: AuthUser }) {
     return this.applicationsService.findOne(id, req.user);

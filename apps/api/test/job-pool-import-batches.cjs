@@ -24,7 +24,9 @@ const { JobPoolService } = require('../dist/job-pool/job-pool.service');
       await tx.$executeRawUnsafe('CREATE TYPE "WorkArrangement" AS ENUM (\'REMOTE\', \'HYBRID\', \'ONSITE\', \'UNKNOWN\')');
       await tx.$executeRawUnsafe('CREATE TABLE "users" ("id" TEXT PRIMARY KEY)');
       await tx.$executeRawUnsafe('CREATE TABLE "system_settings" ("id" TEXT PRIMARY KEY, "key" TEXT NOT NULL UNIQUE, "value" TEXT NOT NULL, "updatedAt" TIMESTAMP(3) NOT NULL)');
-      for (const migration of ['20261016120000_free_us_job_pool', '20261016200000_software_pool_applied_scroll', '20261018010000_job_pool_country_eligibility', '20261018060000_job_pool_viewed', '20261018070000_job_pool_import_batches']) {
+      await tx.$executeRawUnsafe('CREATE TABLE profiles (id TEXT PRIMARY KEY,"firstName" TEXT NOT NULL,"lastName" TEXT NOT NULL)');
+      await tx.$executeRawUnsafe(`INSERT INTO profiles VALUES ('qa-profile','Alex','Morgan')`);
+      for (const migration of ['20261016120000_free_us_job_pool', '20261016200000_software_pool_applied_scroll', '20261018010000_job_pool_country_eligibility', '20261018060000_job_pool_viewed', '20261018070000_job_pool_import_batches','20261020010000_pool_profile_marks_and_title_rules']) {
         const sql = await fs.readFile(path.resolve(__dirname, '../prisma/migrations', migration, 'migration.sql'), 'utf8');
         for (const statement of sql.split(';').map(part => part.trim()).filter(Boolean)) await tx.$executeRawUnsafe(statement);
       }
@@ -32,7 +34,7 @@ const { JobPoolService } = require('../dist/job-pool/job-pool.service');
       await tx.systemSetting.create({ data: { key: 'job_pool_settings', value: JSON.stringify({ enabled: false, intervalHours: 1 }) } });
     });
     const user = { id: 'me', role: 'BIDDER' }, master = { id: 'me', role: 'MASTER' };
-    const service = new JobPoolService(db, { matchingCompanies: async () => ({}) });
+    const service = new JobPoolService(db, {profileForPool:async()=>({id:'qa-profile'}), matchingCompanies: async () => ({}) });
     const otherService = new JobPoolService(db, { matchingCompanies: async () => ({}) });
     const data = id => ({ externalId: id, canonicalUrl: `example.test/${id}`, jobUrl: `https://example.test/${id}`, title: 'Software Engineer', company: 'QA Company', location: 'Remote, United States', eligibleCountries: ['US'], description: 'Build software with TypeScript.', sourceName: 'Test only', workArrangement: 'REMOTE', isSoftware: true });
     const save = (id, worker = service) => worker.saveImportedJob(data(id), { description: 'Updated description' });
@@ -42,7 +44,7 @@ const { JobPoolService } = require('../dist/job-pool/job-pool.service');
     assert.equal(first.addedBatchId, initial.id); assert.equal(second.addedBatchId, initial.id);
     assert.equal(new Date(initial.endsAt) - new Date(initial.startedAt), 3600000);
     check('Concurrent services put new jobs in one persisted one-hour import group');
-    await service.markViewed(user, first.id); await service.markApplied(user, first.id, { applied: true });
+    await service.markViewed(user, first.id); await service.markApplied(user, first.id, { applied: true, profileId:'qa-profile' });
     const expire = async () => { const batch = await service.latestImport(); batch.endsAt = new Date(Date.now() - 1).toISOString(); await db.systemSetting.update({ where: { key: 'job_pool_latest_additions' }, data: { value: JSON.stringify(batch) } }); };
     await expire();
     const refreshed = await save('first');

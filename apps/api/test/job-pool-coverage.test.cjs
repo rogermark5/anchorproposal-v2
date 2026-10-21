@@ -3,13 +3,13 @@ const assert = require('node:assert/strict');
 const { isSoftwareJob, mayBeSoftwareJob } = require('../dist/job-pool/software-jobs');
 const { poolJobIdentity } = require('../dist/job-pool/job-identity');
 
-test('Software specialties include common abbreviations and architecture roles while excluding unrelated occupations', () => {
-  for (const title of ['SW Engineer', 'Senior SWE', 'Cloud Architect', 'Data Architect', 'Database Architect', 'ServiceNow Engineer', 'Salesforce Engineer', 'AI/ML Engineer', 'Automation Tester', 'Build Engineer', 'UI Engineer', 'Security Operations Engineer']) assert.equal(isSoftwareJob(title), true, title);
+test('Software specialties include common abbreviations while excluding unrelated occupations', () => {
+  for (const title of ['SW Engineer', 'Senior SWE', 'ServiceNow Engineer', 'Salesforce Engineer', 'AI/ML Engineer', 'Automation Tester', 'Build Engineer', 'UI Engineer', 'Security Operations Engineer']) assert.equal(isSoftwareJob(title), true, title);
   for (const title of ['Cloud Sales Architect', 'Senior Presales Software Engineer', 'Mechanical Product Engineer', 'Hardware Engineer', 'Manufacturing Architect', 'Clinical Quality Engineer', 'Account Executive']) assert.equal(isSoftwareJob(title, 'Build software and APIs'), false, title);
 });
 
 test('Generic engineering titles require evidence that the role builds software', () => {
-  for (const title of ['Product Engineer', 'Forward Deployed Engineer', 'Founding Engineer', 'Infrastructure Engineer', 'Distributed Systems Engineer', 'Staff Engineer']) {
+  for (const title of ['Product Engineer', 'Forward Deployed Engineer', 'Founding Engineer', 'Infrastructure Engineer', 'Distributed Systems Engineer']) {
     assert.equal(mayBeSoftwareJob(title), true, title);
     assert.equal(isSoftwareJob(title), false, title);
     assert.equal(isSoftwareJob(title, 'You will design and develop scalable software and APIs for our platform.'), true, title);
@@ -155,3 +155,5 @@ test('30,000-source catalog adds distinct live boards without geographic copies,
  assert.doesNotMatch(sql.replace(/'(?:[^']|'')*'/g,"''").replace(/^--.*$/gm,''),/\b(?:DROP|DELETE|TRUNCATE|UPDATE|ALTER)\b/i);
  assert.deepEqual(new Set([...sql.matchAll(/\('source-30000-[^']+', '([^']+)', '(?:[^']|'')*', '([^']*)'/g)].map(m=>`${m[1]}:${m[2]}`.toLowerCase())),added);
 });
+
+test('Excluded seniority/title substrings override software evidence and title shortcuts',()=>{for(const title of ['Staff Software Engineer','PRINCIPAL Backend Developer','Cloud Architect','Data Architect','Database Architect','Junior Frontend Developer','sTaFf Engineer','Principal Engineer','Staffing Software Engineer','Lead Software Engineer','DIRECTOR OF ENGINEERING','Software Team Leader']){assert.equal(mayBeSoftwareJob(title),false,title);assert.equal(isSoftwareJob(title,'Design and develop scalable software APIs.'),false,title);}});

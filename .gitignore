@@ -34,6 +34,9 @@ config.bat
 /apps/desktop/release/
 /apps/desktop/build-app/
 /tmp/desktop-qa/
+/apps/extension/release/
+/apps/web/public/downloads/chrome/
+/tmp/extension-qa/
 /tmp/electron-v*-win32-x64.zip
 /tmp/nsis-*.7z
 /tmp/desktop-api.*.log
