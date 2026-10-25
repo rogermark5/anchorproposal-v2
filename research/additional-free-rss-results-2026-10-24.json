@@ -1,0 +1,320 @@
+{
+  "checkedAt": "2026-10-25T03:03:15.153Z",
+  "timeZone": "America/Los_Angeles",
+  "databaseWrites": false,
+  "cached": false,
+  "rule": "Remote software roles eligible for US, UK or Ireland, posted today in the configured timezone; saved title exclusions apply.",
+  "sources": [
+    {
+      "provider": "remotefirst",
+      "feed": "python",
+      "pages": 1,
+      "complete": true,
+      "todayMatchingJobs": 7,
+      "companies": 7,
+      "companiesAbsentLocalHistory": 2,
+      "ms": 24998
+    },
+    {
+      "provider": "remotefirst",
+      "feed": "javascript",
+      "pages": 1,
+      "complete": true,
+      "todayMatchingJobs": 2,
+      "companies": 1,
+      "companiesAbsentLocalHistory": 1,
+      "ms": 6094
+    },
+    {
+      "provider": "remotefirst",
+      "feed": "typescript",
+      "pages": 1,
+      "complete": true,
+      "todayMatchingJobs": 4,
+      "companies": 2,
+      "companiesAbsentLocalHistory": 1,
+      "ms": 6454
+    },
+    {
+      "provider": "remotefirst",
+      "feed": "react",
+      "pages": 1,
+      "complete": true,
+      "todayMatchingJobs": 4,
+      "companies": 2,
+      "companiesAbsentLocalHistory": 1,
+      "ms": 1576
+    },
+    {
+      "provider": "remotefirst",
+      "feed": "java",
+      "pages": 1,
+      "complete": true,
+      "todayMatchingJobs": 4,
+      "companies": 1,
+      "companiesAbsentLocalHistory": 1,
+      "ms": 4572
+    },
+    {
+      "provider": "remotefirst",
+      "feed": "sql",
+      "pages": 1,
+      "complete": true,
+      "todayMatchingJobs": 9,
+      "companies": 7,
+      "companiesAbsentLocalHistory": 2,
+      "ms": 3828
+    },
+    {
+      "provider": "remotefirst",
+      "feed": "nodejs",
+      "pages": 1,
+      "complete": true,
+      "todayMatchingJobs": 0,
+      "companies": 0,
+      "companiesAbsentLocalHistory": 0,
+      "ms": 1709
+    },
+    {
+      "provider": "remotefirst",
+      "feed": "aws",
+      "pages": 1,
+      "complete": true,
+      "todayMatchingJobs": 7,
+      "companies": 6,
+      "companiesAbsentLocalHistory": 1,
+      "ms": 6091
+    },
+    {
+      "provider": "remotefirst",
+      "feed": "azure",
+      "pages": 1,
+      "complete": true,
+      "todayMatchingJobs": 6,
+      "companies": 5,
+      "companiesAbsentLocalHistory": 2,
+      "ms": 2554
+    },
+    {
+      "provider": "remotefirst",
+      "feed": "kubernetes",
+      "pages": 1,
+      "complete": true,
+      "todayMatchingJobs": 0,
+      "companies": 0,
+      "companiesAbsentLocalHistory": 0,
+      "ms": 2666
+    },
+    {
+      "provider": "remotefirst",
+      "feed": "docker",
+      "pages": 1,
+      "complete": true,
+      "todayMatchingJobs": 0,
+      "companies": 0,
+      "companiesAbsentLocalHistory": 0,
+      "ms": 1641
+    },
+    {
+      "provider": "remotefirst",
+      "feed": "rust",
+      "pages": 1,
+      "complete": true,
+      "todayMatchingJobs": 0,
+      "companies": 0,
+      "companiesAbsentLocalHistory": 0,
+      "ms": 2101
+    },
+    {
+      "provider": "remotefirst",
+      "feed": "php",
+      "pages": 1,
+      "complete": true,
+      "todayMatchingJobs": 0,
+      "companies": 0,
+      "companiesAbsentLocalHistory": 0,
+      "ms": 1619
+    },
+    {
+      "provider": "remotefirst",
+      "feed": "ruby",
+      "pages": 1,
+      "complete": true,
+      "todayMatchingJobs": 0,
+      "companies": 0,
+      "companiesAbsentLocalHistory": 0,
+      "ms": 1980
+    },
+    {
+      "provider": "remotefirst",
+      "feed": "swift",
+      "pages": 1,
+      "complete": true,
+      "todayMatchingJobs": 0,
+      "companies": 0,
+      "companiesAbsentLocalHistory": 0,
+      "ms": 1437
+    },
+    {
+      "provider": "remotefirst",
+      "feed": "kotlin",
+      "pages": 1,
+      "complete": true,
+      "todayMatchingJobs": 0,
+      "companies": 0,
+      "companiesAbsentLocalHistory": 0,
+      "ms": 1444
+    },
+    {
+      "provider": "remotefirst",
+      "feed": "android",
+      "pages": 1,
+      "complete": true,
+      "todayMatchingJobs": 0,
+      "companies": 0,
+      "companiesAbsentLocalHistory": 0,
+      "ms": 2048
+    },
+    {
+      "provider": "remotefirst",
+      "feed": "ios",
+      "pages": 1,
+      "complete": true,
+      "todayMatchingJobs": 1,
+      "companies": 1,
+      "companiesAbsentLocalHistory": 0,
+      "ms": 1484
+    },
+    {
+      "provider": "remotefirst",
+      "feed": "golang",
+      "pages": 1,
+      "complete": true,
+      "todayMatchingJobs": 0,
+      "companies": 0,
+      "companiesAbsentLocalHistory": 0,
+      "ms": 1651
+    },
+    {
+      "provider": "remotefirst",
+      "feed": "data-science",
+      "pages": 1,
+      "complete": true,
+      "todayMatchingJobs": 5,
+      "companies": 5,
+      "companiesAbsentLocalHistory": 1,
+      "ms": 3206
+    },
+    {
+      "provider": "remotefirst",
+      "feed": "machine-learning",
+      "pages": 1,
+      "complete": true,
+      "todayMatchingJobs": 0,
+      "companies": 0,
+      "companiesAbsentLocalHistory": 0,
+      "ms": 1632
+    },
+    {
+      "provider": "remotefirst",
+      "feed": "cloud-security",
+      "pages": 1,
+      "complete": true,
+      "todayMatchingJobs": 6,
+      "companies": 6,
+      "companiesAbsentLocalHistory": 2,
+      "ms": 1579
+    },
+    {
+      "provider": "remotefirst",
+      "feed": "systems-administration",
+      "pages": 1,
+      "complete": true,
+      "todayMatchingJobs": 3,
+      "companies": 3,
+      "companiesAbsentLocalHistory": 1,
+      "ms": 2871
+    },
+    {
+      "provider": "remotefirst",
+      "feed": "security-engineer",
+      "pages": 1,
+      "complete": true,
+      "todayMatchingJobs": 6,
+      "companies": 6,
+      "companiesAbsentLocalHistory": 1,
+      "ms": 1446
+    },
+    {
+      "provider": "remotefirst",
+      "feed": "unreal-engine",
+      "pages": 1,
+      "complete": true,
+      "todayMatchingJobs": 0,
+      "companies": 0,
+      "companiesAbsentLocalHistory": 0,
+      "ms": 1351
+    },
+    {
+      "provider": "remotefirst",
+      "feed": "dotnet",
+      "pages": 1,
+      "complete": true,
+      "todayMatchingJobs": 2,
+      "companies": 1,
+      "companiesAbsentLocalHistory": 0,
+      "ms": 1722
+    },
+    {
+      "provider": "remotefirst",
+      "feed": "tech",
+      "pages": 1,
+      "complete": true,
+      "todayMatchingJobs": 2,
+      "companies": 2,
+      "companiesAbsentLocalHistory": 0,
+      "ms": 26308
+    },
+    {
+      "provider": "remotefirst",
+      "feed": "web3",
+      "pages": 1,
+      "complete": true,
+      "todayMatchingJobs": 0,
+      "companies": 0,
+      "companiesAbsentLocalHistory": 0,
+      "ms": 4349
+    },
+    {
+      "provider": "remotefirst",
+      "feed": "data-processing",
+      "pages": 1,
+      "complete": true,
+      "todayMatchingJobs": 8,
+      "companies": 6,
+      "companiesAbsentLocalHistory": 0,
+      "ms": 2567
+    },
+    {
+      "provider": "remotefirst",
+      "feed": "business-intelligence-analyst",
+      "pages": 1,
+      "complete": true,
+      "todayMatchingJobs": 0,
+      "companies": 0,
+      "companiesAbsentLocalHistory": 0,
+      "ms": 1700
+    }
+  ],
+  "summary": {
+    "uniqueSourceUrls": 18,
+    "distinctCompanyNames": 12,
+    "companiesAbsentLocalHistory": 2,
+    "byCountry": {
+      "US": 17,
+      "GB": 7,
+      "IE": 8
+    },
+    "note": "Snapshot of source URLs, before cross-provider content deduplication. Existing postings can upgrade missing metadata without creating a new job. This is not a guaranteed daily supply."
+  }
+}

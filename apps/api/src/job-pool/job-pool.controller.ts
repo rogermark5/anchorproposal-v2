@@ -36,6 +36,10 @@ export class JobPoolController {
   @Roles(UserRole.MASTER)
   sync(@Req() req: { user: AuthUser }, @Body() body: Record<string, unknown>) { return this.service.sync(req.user, body); }
 
+  @Post('discover')
+  @Roles(UserRole.MASTER)
+  discover(@Req() req: { user: AuthUser }) { return this.service.discover(req.user); }
+
   @Post()
   @Roles(UserRole.MASTER)
   addJob(@Req() req: { user: AuthUser }, @Body() body: Record<string, unknown>) { return this.service.addJob(req.user, body); }

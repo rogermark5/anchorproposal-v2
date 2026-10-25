@@ -7,7 +7,7 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { AuthUser } from '../common/types/auth.types';
 import { appendJsonRules, jsonOutputRules, promptInstructions, parseDocumentKind, type DocumentKind } from '../deepseek/json-rules';
-import { DEFAULT_PROMPT } from '@anchorproposal/shared';
+import { DEFAULT_PROMPT, answerPromptLengthError } from '@anchorproposal/shared';
 import { defaultDocumentDisplay, type DocumentDisplay } from '../generations/document-display';
 import { parseExperienceTitleMode, type ExperienceTitleMode } from '../generations/experience-title-mode';
 
@@ -268,10 +268,10 @@ export class SettingsService {
   }
 
   async setAnswerPrompt(prompt: string, userId: string): Promise<string> {
-    const value = prompt?.trim() || SettingsService.DEFAULT_ANSWER_PROMPT;
-    if (value.length > 20_000) {
-      throw new BadRequestException('Answer prompt is too long');
-    }
+    if (typeof prompt !== 'string') throw new BadRequestException('Answer instructions must be text.');
+    const value = prompt.trim() || SettingsService.DEFAULT_ANSWER_PROMPT;
+    const lengthError = answerPromptLengthError(value);
+    if (lengthError) throw new BadRequestException(lengthError);
     await this.prisma.systemSetting.upsert({
       where: { key: `${SettingsService.ANSWER_PROMPT_KEY}:${userId}` },
       create: { key: `${SettingsService.ANSWER_PROMPT_KEY}:${userId}`, value },

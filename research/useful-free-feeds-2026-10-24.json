@@ -1,0 +1,169 @@
+{
+  "checkedAt": "2026-10-25T02:25:59.737Z",
+  "timeZone": "America/Los_Angeles",
+  "databaseWrites": false,
+  "rule": "Remote software roles eligible for US, UK or Ireland, posted today in the configured timezone; saved title exclusions apply.",
+  "sources": [
+    {
+      "provider": "wwr",
+      "feed": "all",
+      "pages": 1,
+      "complete": true,
+      "todayMatchingJobs": 2,
+      "companies": 2,
+      "companiesAbsentLocalHistory": 0,
+      "ms": 4390
+    },
+    {
+      "provider": "remotefirst",
+      "feed": "software-development",
+      "pages": 1,
+      "complete": true,
+      "todayMatchingJobs": 14,
+      "companies": 8,
+      "companiesAbsentLocalHistory": 1,
+      "ms": 30795
+    },
+    {
+      "provider": "remotefirst",
+      "feed": "devops",
+      "pages": 1,
+      "complete": true,
+      "todayMatchingJobs": 2,
+      "companies": 1,
+      "companiesAbsentLocalHistory": 1,
+      "ms": 8076
+    },
+    {
+      "provider": "remotefirst",
+      "feed": "data",
+      "pages": 1,
+      "complete": true,
+      "todayMatchingJobs": 7,
+      "companies": 5,
+      "companiesAbsentLocalHistory": 0,
+      "ms": 12394
+    },
+    {
+      "provider": "remotefirst",
+      "feed": "cybersecurity",
+      "pages": 1,
+      "complete": true,
+      "todayMatchingJobs": 1,
+      "companies": 1,
+      "companiesAbsentLocalHistory": 0,
+      "ms": 6832
+    },
+    {
+      "provider": "remotefirst",
+      "feed": "qa",
+      "pages": 1,
+      "complete": true,
+      "todayMatchingJobs": 3,
+      "companies": 2,
+      "companiesAbsentLocalHistory": 0,
+      "ms": 5776
+    },
+    {
+      "provider": "remotefirst",
+      "feed": "ai",
+      "pages": 1,
+      "complete": true,
+      "todayMatchingJobs": 7,
+      "companies": 5,
+      "companiesAbsentLocalHistory": 0,
+      "ms": 14879
+    },
+    {
+      "provider": "freehire",
+      "feed": "trinethire",
+      "pages": 1,
+      "complete": true,
+      "todayMatchingJobs": 16,
+      "companies": 13,
+      "companiesAbsentLocalHistory": 13,
+      "ms": 4331
+    },
+    {
+      "provider": "freehire-global",
+      "feed": "trinethire",
+      "pages": 1,
+      "complete": true,
+      "todayMatchingJobs": 0,
+      "companies": 0,
+      "companiesAbsentLocalHistory": 0,
+      "ms": 1552
+    },
+    {
+      "provider": "freehire",
+      "feed": "taleobe",
+      "pages": 1,
+      "complete": true,
+      "todayMatchingJobs": 0,
+      "companies": 0,
+      "companiesAbsentLocalHistory": 0,
+      "ms": 1613
+    },
+    {
+      "provider": "freehire-global",
+      "feed": "taleobe",
+      "pages": 1,
+      "complete": true,
+      "todayMatchingJobs": 0,
+      "companies": 0,
+      "companiesAbsentLocalHistory": 0,
+      "ms": 1545
+    },
+    {
+      "provider": "freehire",
+      "feed": "factorial",
+      "pages": 1,
+      "complete": true,
+      "todayMatchingJobs": 0,
+      "companies": 0,
+      "companiesAbsentLocalHistory": 0,
+      "ms": 1600
+    },
+    {
+      "provider": "freehire-global",
+      "feed": "factorial",
+      "pages": 1,
+      "complete": true,
+      "todayMatchingJobs": 0,
+      "companies": 0,
+      "companiesAbsentLocalHistory": 0,
+      "ms": 1543
+    },
+    {
+      "provider": "freehire",
+      "feed": "neogov",
+      "pages": 1,
+      "complete": true,
+      "todayMatchingJobs": 0,
+      "companies": 0,
+      "companiesAbsentLocalHistory": 0,
+      "ms": 1583
+    },
+    {
+      "provider": "freehire-global",
+      "feed": "neogov",
+      "pages": 1,
+      "complete": true,
+      "todayMatchingJobs": 0,
+      "companies": 0,
+      "companiesAbsentLocalHistory": 0,
+      "ms": 1547
+    }
+  ],
+  "summary": {
+    "uniqueSourceUrls": 34,
+    "distinctCompanyNames": 24,
+    "companiesAbsentLocalHistory": 14,
+    "byCountry": {
+      "US": 33,
+      "GB": 8,
+      "IE": 9
+    },
+    "note": "Snapshot of source URLs, before cross-provider content deduplication. Existing postings can upgrade missing metadata without creating a new job. This is not a guaranteed daily supply."
+  }
+}

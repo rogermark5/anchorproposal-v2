@@ -630,6 +630,8 @@ model JobPoolJob {
   jobUrl          String
   title           String
   company         String
+  companyKey      String          @default("")
+  companyRecord   JobPoolCompany  @relation(fields: [companyKey], references: [key])
   location        String
   eligibleCountries String[]      @default([])
   workArrangement WorkArrangement @default(UNKNOWN)
@@ -638,6 +640,7 @@ model JobPoolJob {
   employmentType  String?
   sourceName      String
   publishedAt     DateTime?
+  sourceUpdatedAt DateTime?
   expiresAt       DateTime?
   lastSeenAt      DateTime        @default(now())
   hidden          Boolean         @default(false)
@@ -655,7 +658,36 @@ model JobPoolJob {
   @@index([eligibleCountries], type: Gin)
   @@index([isActive, hidden, lastSeenAt])
   @@index([sourceId])
+  @@index([companyKey, publishedAt])
   @@map("job_pool_jobs")
+}
+
+model JobPoolCompany {
+  key         String       @id
+  name        String
+  firstSeenAt DateTime     @default(now())
+  lastSeenAt  DateTime     @default(now())
+  jobs        JobPoolJob[]
+
+  @@index([firstSeenAt])
+  @@map("job_pool_companies")
+}
+
+model JobPoolBoardCandidate {
+  id           String    @id @default(uuid())
+  provider     String
+  boardToken   String
+  name         String
+  state        String    @default("pending")
+  discoveredAt DateTime  @default(now())
+  checkedAt    DateTime?
+  nextCheckAt  DateTime  @default(now())
+  lockedUntil  DateTime?
+  lastError    String?
+
+  @@unique([provider, boardToken])
+  @@index([state, nextCheckAt])
+  @@map("job_pool_board_candidates")
 }
 
 model JobPoolApplied {

@@ -6,7 +6,7 @@ import { toast } from 'sonner';
 import { useRouter } from 'next/navigation';
 import { api, PoolImportBatch, PoolJob, PoolListing, PoolManagement, PoolUpdates } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
-import { compareSourcePostingTime, jobTimeAgo } from '@/lib/job-time';
+import { jobTimeAgo } from '@/lib/job-time';
 import { JobSiteLogo } from '@/components/job-site-logo';
 import { desktopBridge } from '@/lib/desktop-bridge';
 
@@ -15,6 +15,14 @@ const button = 'inline-flex items-center justify-center gap-2 rounded-lg border 
 const primary = 'inline-flex items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary-deep disabled:opacity-50';
 const workNames: Record<string, string> = { REMOTE: 'Remote', HYBRID: 'Hybrid', ONSITE: 'On site', UNKNOWN: 'See listing' };
 const countryNames: Record<string, string> = { US: 'US', GB: 'UK', IE: 'Ireland' };
+const feedCredits = [
+  { name: 'AI Dev Jobs', url: 'https://aidevboard.com' },
+  { name: 'Arbeitnow', url: 'https://www.arbeitnow.com' }, { name: 'OnJob.io', url: 'https://onjob.io' },
+  { name: 'Nomado24', url: 'https://www.nomado24.com' }, { name: 'Remote Frontend Jobs', url: 'https://www.remotefrontendjobs.com' },
+  { name: 'Remote First Jobs', url: 'https://remotefirstjobs.com' }, { name: 'We Work Remotely', url: 'https://weworkremotely.com' },
+  { name: 'Freehire', url: 'https://freehire.me' }, { name: 'Ocean of Jobs', url: 'https://oceanofjobs.com' },
+  { name: 'RemoteJobs.org', url: 'https://remotejobs.org' }, { name: 'Jobicy', url: 'https://jobicy.com' }, { name: 'Remote OK', url: 'https://remoteok.com' },
+];
 const boardExamples: Record<string, string> = { greenhouse:'boards.greenhouse.io/airbnb → airbnb', lever:'jobs.lever.co/spotify → spotify', ashby:'jobs.ashbyhq.com/notion → notion', smartrecruiters:'careers.smartrecruiters.com/ServiceNow → ServiceNow', workable:'apply.workable.com/example → example', recruitee:'example.recruitee.com → example', breezy:'example.breezy.hr → example', pinpoint:'example.pinpointhq.com → example', personio:'example.jobs.personio.de → example', bamboohr:'example.bamboohr.com → example', teamtailor:'example.teamtailor.com → example.teamtailor.com (include the host)', paylocity:'recruiting.paylocity.com/recruiting/jobs/All/company-uuid → company-uuid' };
 const when = (date: string | null) => date ? new Date(date).toLocaleString() : 'Never';
 const message = (error: unknown) => error instanceof Error ? error.message : 'Something went wrong. Please try again.';
@@ -55,8 +63,8 @@ function Modal({ title, children, close }: { title: string; children: ReactNode;
 type Profile = { id: string; firstName: string; lastName: string; isDefault?: boolean };
 const emptyJob = { title: '', company: '', location: 'United States', jobUrl: '', description: '', workArrangement: 'REMOTE' };
 
-function PostingTime({ value, now }: { value: string | null; now: number }) {
-  return value && Number.isFinite(Date.parse(value)) ? <time dateTime={value} title={'Source posting time: ' + new Date(value).toLocaleString()}>Posted {jobTimeAgo(value, now)}</time> : <span>Posting time unavailable</span>;
+function PostingTime({ value, updated, now }: { value: string | null; updated?: string | null; now: number }) {
+  return value && Number.isFinite(Date.parse(value)) ? <time dateTime={value} title={'Source posting time: ' + new Date(value).toLocaleString()}>Posted {jobTimeAgo(value, now)}</time> : updated && Number.isFinite(Date.parse(updated)) ? <time dateTime={updated} title="Source update time; original posting date unavailable">Updated {jobTimeAgo(updated, now)}</time> : <span>Posting time unavailable</span>;
 }
 
 function TitleKeywordSettings({ keywords, save }: { keywords: string[]; save: (keywords: string[]) => Promise<void> }) {
@@ -97,7 +105,7 @@ export default function JobPoolPage() {
   const [country, setCountry] = useState('all');
   const [showImportDetails, setShowImportDetails] = useState(false);
   const [sourceQuery, setSourceQuery] = useState(''), [sourcePage, setSourcePage] = useState(1);
-  const [days, setDays] = useState('all'), [status, setStatus] = useState('not-applied'), [includeHidden, setIncludeHidden] = useState(false);
+  const [days, setDays] = useState('all'), [sort, setSort] = useState('imported'), [includeHidden, setIncludeHidden] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false), [moreError, setMoreError] = useState('');
   const [marking, setMarking] = useState<string | null>(null), [now, setNow] = useState(Date.now());
   const sentinel = useRef<HTMLDivElement>(null), moreFlight = useRef<number | null>(null);
@@ -111,13 +119,14 @@ export default function JobPoolPage() {
   const viewedMarks = useRef(new Map<string, { viewed: true; viewedAt: string }>());
   const viewFlights = useRef(new Map<string, Promise<void>>());
   const activeUser = useRef(user?.id); activeUser.current = user?.id;
-  useEffect(()=>{let active=true;void desktopBridge()?.poolDefaults?.().then(value=>{if(active){setCountry(value.country);setDays(value.days);setStatus(value.applied);}}).catch(()=>{});return()=>{active=false;};},[user?.id]);
+  useEffect(()=>{let active=true;void desktopBridge()?.poolDefaults?.().then(value=>{if(active){setCountry(value.country);setDays(value.days);}}).catch(()=>{});return()=>{active=false;};},[user?.id]);
   useEffect(() => { viewedMarks.current.clear(); viewFlights.current.clear(); }, [user?.id]);
   const mergeViewed = useCallback((data: PoolListing): PoolListing => ({ ...data, jobs: data.jobs.map(job => ({ ...job, ...viewedMarks.current.get(job.id) })) }), []);
   const markFlight = useRef(false);
   useEffect(() => { const timer = setTimeout(() => setQuery(q.trim()), 350); return () => clearTimeout(timer); }, [q]);
   useEffect(() => { const timer = setInterval(() => setNow(Date.now()), 30_000); return () => clearInterval(timer); }, []);
-  const filters = useCallback(() => ({ q: query, site, country, days, status, ...(isMaster && includeHidden ? { includeHidden: 'true' } : {}) }), [query, site, country, days, status, isMaster, includeHidden, user?.id]);
+  const filters = useCallback(() => ({ q: query, site, country, days, sort, status: 'all', companyStatus: 'true',
+    ...(isMaster && includeHidden ? { includeHidden: 'true' } : {}) }), [query, site, country, days, sort, isMaster, includeHidden, user?.id]);
   const load = useCallback(async (quiet = false) => {
     const request = ++requestId.current; moreFlight.current = null; setLoadingMore(false); setMoreError('');
     setUpdates(null);
@@ -134,7 +143,7 @@ export default function JobPoolPage() {
     const request = requestId.current; moreFlight.current = request; setLoadingMore(true); setMoreError('');
     try {
       const data = await api.getJobPool({ ...filters(), cursor: listing.nextCursor });
-      if (request === requestId.current) setListing(previous => previous ? mergeViewed({ ...data, latestImport: newerBatch(previous.latestImport, data.latestImport), jobs: [...previous.jobs, ...data.jobs.filter(job => !previous.jobs.some(existing => existing.id === job.id))] }) : mergeViewed(data));
+      if (request === requestId.current) setListing(previous => previous ? mergeViewed({ ...data, latestImport: newerBatch(previous.latestImport, data.latestImport), jobs: [...previous.jobs, ...data.jobs.filter(job => !previous.jobs.some(existing => data.groupedByCompany ? existing.companyKey === job.companyKey : existing.id === job.id))] }) : mergeViewed(data));
     } catch (err) { if (request === requestId.current) setMoreError(message(err)); }
     finally { if (request === requestId.current) { moreFlight.current = null; setLoadingMore(false); } }
   }, [listing?.nextCursor, loading, marking, filters, mergeViewed]);
@@ -242,19 +251,13 @@ export default function JobPoolPage() {
       if (request !== requestId.current) await latestLoad.current(true);
       else {
         requestId.current++; moreFlight.current = null; setLoadingMore(false); setLoading(false);
-        setListing(previous => {
-        if (!previous) return previous;
-        const before = status === 'all' || (status === 'applied') === job.applied;
-        const after = status === 'all' || (status === 'applied') === result.applied;
-        let jobs = previous.jobs.flatMap(item => item.id === job.id ? after ? [{ ...item, ...result }] : [] : [item]);
-        if (after && !jobs.some(item => item.id === job.id)) jobs = [...jobs, { ...job, ...result }].sort(compareSourcePostingTime);
-        return { ...previous, total: Math.max(0, previous.total + Number(after) - Number(before)), jobs };
-        });
+        setListing(previous => previous ? { ...previous, jobs: previous.jobs.map(item => item.id === job.id ? { ...item, ...result } : item) } : previous);
       }
       setSelected(previous => previous?.id === job.id ? { ...previous, ...result } : previous);
       setMarkTarget(previous => previous?.id === job.id ? { ...previous, ...result } : previous);
       setMarkProfileId(markProfiles.find(profile => !result.appliedProfiles.some(mark => mark.profileId === profile.id))?.id || '');
       toast.success(applied ? 'Applied profile saved.' : 'Applied mark removed for this profile.');
+      await latestLoad.current(true);
     } catch (err) { toast.error(message(err)); } finally { markFlight.current = false; setMarking(null); }
   };
   const saveJob = async (event: FormEvent) => {
@@ -287,6 +290,7 @@ export default function JobPoolPage() {
         <div className="flex flex-wrap items-center gap-2"><label className="text-sm text-slate-600" htmlFor="pool-interval">Refresh every</label><select id="pool-interval" className={field + ' !w-auto'} value={management.settings.intervalHours} disabled={busy} onChange={event => void mutate(() => api.updatePoolSettings({ intervalHours: Number(event.target.value) }))}>{[1, 6, 12, 24].map(hours => <option key={hours} value={hours}>{hours} {hours === 1 ? 'hour' : 'hours'}</option>)}</select>
           <button className={management.settings.enabled ? button : primary} disabled={busy || !enabledSources} onClick={() => void mutate(() => api.updatePoolSettings({ enabled: !management.settings.enabled }), management.settings.enabled ? 'Automatic imports paused.' : 'Automatic imports enabled. Jobs appear as they are imported.')}>{management.settings.enabled ? 'Pause imports' : 'Start automatic imports'}</button></div>
       </div>
+      <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-lg bg-slate-50 p-3 text-xs text-slate-600"><p>Daily employer discovery · Himalayas refreshes every 24 hours. {management.discovery ? management.discovery.pendingBoards + ' boards awaiting checks · ' + management.discovery.verifiedBoards + ' new boards verified.' : 'Employer boards are checked before they are added.'}</p><button className={button} disabled={busy} onClick={() => void mutate(async () => { const result = await api.discoverPoolCompanies(); toast.message(result.message); })}>Discover companies now</button></div>
       <details className="mt-3" open={showImportDetails} onToggle={event => setShowImportDetails(event.currentTarget.open)}><summary className="cursor-pointer text-sm font-medium text-primary">Import details and manage sources</summary>
       <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4" aria-label="Source coverage">
         <div className="rounded-lg bg-slate-50 px-4 py-3"><p className="text-xl font-semibold text-slate-800">{totalSources.toLocaleString()}</p><p className="text-xs text-slate-500">Distinct sources in the library</p><p className="mt-1 text-xs text-slate-500">{(management.sourceTarget || 30000).toLocaleString()} total source target · {totalSources >= (management.sourceTarget || 30000) ? 'Met' : `${((management.sourceTarget || 30000) - totalSources).toLocaleString()} more needed`}</p></div>
@@ -330,26 +334,30 @@ export default function JobPoolPage() {
     }} />}
 
     <section className="rounded-xl border border-[var(--border)] bg-white" aria-label="Available jobs">
-      {updates && updates.newCount > 0 && <div role="status" className="fixed bottom-5 left-4 right-4 z-40 mx-auto flex max-w-2xl flex-wrap items-center justify-between gap-3 rounded-xl border border-primary/30 bg-white px-5 py-3 text-sm text-primary-deep shadow-lg"><span>{updates.newCount.toLocaleString()} new matching {updates.newCount === 1 ? 'job has' : 'jobs have'} been imported.</span><button className={button} onClick={refresh}>Refresh job list</button></div>}
-      <div role="search" aria-label="Filter jobs" className={'grid grid-cols-2 items-end gap-3 rounded-t-xl border-b border-slate-200 bg-slate-50/70 px-4 py-3 sm:grid-cols-4 ' + (isMaster ? 'xl:grid-cols-[minmax(200px,2fr)_minmax(110px,0.8fr)_minmax(130px,1fr)_minmax(150px,1fr)_minmax(120px,0.9fr)_auto]' : 'xl:grid-cols-[minmax(200px,2fr)_minmax(110px,0.8fr)_minmax(130px,1fr)_minmax(150px,1fr)_minmax(120px,0.9fr)]')}>
+      {updates && updates.newCount > 0 && <div role="status" className="fixed bottom-5 left-4 right-4 z-40 mx-auto flex max-w-2xl flex-wrap items-center justify-between gap-3 rounded-xl border border-primary/30 bg-white px-5 py-3 text-sm text-primary-deep shadow-lg"><span>{updates.newCount.toLocaleString()} new matching {updates.groupedByCompany ? 'companies discovered' : 'jobs imported'}.</span><button className={button} onClick={refresh}>Refresh job list</button></div>}
+      <div role="search" aria-label="Filter jobs" className={'grid grid-cols-2 items-end gap-3 rounded-t-xl border-b border-slate-200 bg-slate-50/70 px-4 py-3 sm:grid-cols-4 ' + (isMaster ? 'xl:grid-cols-[minmax(200px,2fr)_minmax(110px,0.8fr)_minmax(130px,1fr)_minmax(150px,1fr)_minmax(160px,1fr)_minmax(110px,0.8fr)]' : 'xl:grid-cols-[minmax(200px,2fr)_minmax(110px,0.8fr)_minmax(130px,1fr)_minmax(150px,1fr)_minmax(160px,1fr)]')}>
         <label htmlFor="pool-search" className="col-span-2 min-w-0 text-xs font-medium text-slate-600 xl:col-span-1">Search jobs<div className="relative mt-1"><Search size={17} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" /><input id="pool-search" aria-label="Search jobs" className={field + ' h-10 min-w-0 pl-10'} placeholder="Job title, company, location or skill…" value={q} onChange={event => setQ(event.target.value)} /></div></label>
         <label className="min-w-0 text-xs font-medium text-slate-600">Country<select aria-label="Filter by country" className={field + ' mt-1 block h-10 min-w-0'} value={country} onChange={event => setCountry(event.target.value)}><option value="all">All countries</option><option value="US">United States</option><option value="GB">United Kingdom</option><option value="IE">Ireland</option></select></label>
         <label className="min-w-0 text-xs font-medium text-slate-600">Site<select aria-label="Filter by site" className={field + ' mt-1 block h-10 min-w-0'} value={site} onChange={event => setSite(event.target.value)}><option value="">All sites</option>{listing?.sites?.map(site => <option key={site.id} value={site.id}>{site.name}</option>)}</select></label>
         <label className="min-w-0 text-xs font-medium text-slate-600">Posted<select aria-label="Filter by source posting time" title="Rolling hours based on the source posting time; jobs without a source date appear under All time" className={field + ' mt-1 block h-10 min-w-0'} value={days} onChange={event => setDays(event.target.value)}><option value="all">All time</option>{[1, 3, 7, 14, 30].map(day => <option key={day} value={day}>{day === 1 ? 'Last 24 hours' : 'Last ' + day + ' days (' + day * 24 + ' hours)'}</option>)}</select></label>
-        <label className="min-w-0 text-xs font-medium text-slate-600">My applications<select aria-label="Filter by applied status" className={field + ' mt-1 block h-10 min-w-0'} value={status} onChange={event => setStatus(event.target.value)}><option value="not-applied">Not applied</option><option value="applied">Applied</option><option value="all">All jobs</option></select></label>
-        {isMaster && <label className="flex h-10 cursor-pointer items-center gap-2 whitespace-nowrap rounded-lg border border-slate-300 bg-white px-3 text-xs font-medium text-slate-600 transition-colors hover:border-primary/40 hover:bg-primary/5 focus-within:ring-2 focus-within:ring-primary/30"><input type="checkbox" className="h-3.5 w-3.5 accent-primary" checked={includeHidden} onChange={event => { setIncludeHidden(event.target.checked); }} /> Show hidden</label>}
+        <label className="min-w-0 text-xs font-medium text-slate-600">Sort by<select aria-label="Sort jobs" className={field + ' mt-1 block h-10 min-w-0'} value={sort} onChange={event => setSort(event.target.value)}><option value="imported">Recently imported</option><option value="newest">Newest posted</option></select></label>
+        {isMaster && <label className="min-w-0 text-xs font-medium text-slate-600">Visibility<select aria-label="Filter by visibility" className={field + ' mt-1 block h-10 min-w-0'} value={includeHidden ? 'all' : 'visible'} onChange={event => setIncludeHidden(event.target.value === 'all')}><option value="visible">Visible jobs</option><option value="all">Include hidden</option></select></label>}
+      </div>
+      <div className="flex flex-wrap items-center gap-4 border-b border-slate-200 px-4 py-2 text-xs text-slate-600">
+        {listing?.newCompanyCount !== undefined && <span className="ml-auto"><strong className="text-primary-deep">{(updates?.newCompanyCount ?? listing.newCompanyCount).toLocaleString()}</strong> matching new companies in 24 hours · Goal: 1,000/day</span>}
       </div>
       {error && <div role="alert" className="m-4 rounded-lg bg-red-50 p-4 text-sm text-red-700">{error}<button className="ml-3 underline" onClick={() => void load()}>Try again</button></div>}
       {loading && !listing ? <p className="p-12 text-center text-sm text-slate-500">Loading jobs…</p> : <>
-        <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5 text-xs text-slate-600"><span>{(updates?.total ?? listing?.total ?? 0).toLocaleString()} matching remote software jobs{loading && ' · Updating…'}</span><span className="text-slate-600" title={listing?.latestImport ? `Latest additions started ${when(listing.latestImport.startedAt)}; grouped by the ${listing.latestImport.intervalHours}-hour import interval.` : undefined}>New = latest import additions</span><div aria-label="Job status colors" className="flex flex-wrap items-center gap-1.5">{(Object.keys(jobStates) as (keyof typeof jobStates)[]).map(state => <span key={state} className={'rounded px-2 py-1 font-medium ' + jobStates[state].badge}>{state}</span>)}<span className="rounded bg-amber-200 px-2 py-1 font-medium text-amber-950" title="Status colors appear on badges only. Company matches include the profile used for your application.">Company match</span></div></div>
+        {listing?.jobs.some(job => feedCredits.some(credit => job.sourceName?.startsWith(credit.name))) && <p aria-label="Job feed attribution" className="flex flex-wrap gap-x-2 px-4 pt-2 text-[11px] text-slate-500">Job data: {feedCredits.filter(credit => listing.jobs.some(job => job.sourceName?.startsWith(credit.name))).map(credit => <a key={credit.name} href={credit.url} target="_blank" rel="noopener noreferrer" className="underline">{credit.name}</a>)}</p>}
+        <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5 text-xs text-slate-600"><span>{(updates?.total ?? listing?.total ?? 0).toLocaleString()} matching {listing?.groupedByCompany ? 'companies · ' + (listing.jobTotal || 0).toLocaleString() + ' jobs' : 'remote software jobs'}{loading && ' · Updating…'}</span><span className="text-slate-600" title={listing?.latestImport ? `Latest additions started ${when(listing.latestImport.startedAt)}; grouped by the ${listing.latestImport.intervalHours}-hour import interval.` : undefined}>New = latest import additions</span><div aria-label="Job status colors" className="flex flex-wrap items-center gap-1.5">{(Object.keys(jobStates) as (keyof typeof jobStates)[]).map(state => <span key={state} className={'rounded px-2 py-1 font-medium ' + jobStates[state].badge}>{state}</span>)}<span className="rounded bg-amber-200 px-2 py-1 font-medium text-amber-950" title="Status colors appear on badges only. Company matches include the profile used for your application.">Company match</span></div></div>
         {!listing?.jobs.length ? <div className="p-12 text-center"><Briefcase size={48} className="mx-auto mb-3 text-slate-200" /><h3 className="font-medium text-slate-700">No jobs match these filters</h3><p className="mx-auto mt-2 max-w-lg text-sm text-slate-500">{isMaster ? 'Click Import jobs now, start automatic imports, or add a job manually.' : 'Try All jobs or a wider date range, or check back for newly published software roles.'}</p></div> : <div className="divide-y divide-slate-100">{listing.jobs.map(job => <article key={job.id} data-job-id={job.id} data-job-state={jobState(job, listing.latestImport)} data-job-new={isNewJob(job, listing.latestImport)} className="flex items-start gap-3 bg-white px-4 py-2 transition-colors duration-150 hover:bg-slate-50 focus-within:bg-slate-50 motion-reduce:transition-none">
           <JobSiteLogo site={job.site} /><div className="flex min-w-0 flex-1 flex-col gap-1.5 lg:flex-row lg:items-center lg:gap-4"><div className="min-w-0 flex-1">
             <button onClick={() => void openJob(job)} title={job.title} className="block max-w-full truncate text-left text-sm font-semibold leading-5 text-primary-deep hover:underline">{job.title}</button>
-            <div className="flex min-w-0 flex-wrap items-center gap-x-2 text-xs leading-5 text-slate-600 sm:flex-nowrap"><span className="max-w-[35%] truncate font-medium text-slate-700" title={job.company}>{job.company}</span><span aria-hidden="true">·</span><span className="min-w-0 truncate" title={job.location}>{job.location}</span><span className="shrink-0 text-primary-deep">{job.eligibleCountries?.map(code => countryNames[code]).join(' / ')}</span><span className={'max-w-[180px] shrink-0 truncate rounded px-1.5 text-[11px] font-semibold leading-4 ' + jobStates[jobState(job, listing.latestImport)].badge}>{job.applied ? 'Applied · ' + (job.appliedProfiles?.map(mark => mark.profileName).join(', ') || 'Profile not recorded') : jobState(job, listing.latestImport)}</span>{isNewJob(job, listing.latestImport) && (job.viewed || job.applied) && <span className={'shrink-0 rounded px-1.5 text-[11px] font-semibold leading-4 ' + jobStates.New.badge}>New</span>}{job.hidden && <span className="text-amber-700">Hidden</span>}</div>
+            <div className="flex min-w-0 flex-wrap items-center gap-x-2 text-xs leading-5 text-slate-600 sm:flex-nowrap"><span className="max-w-[35%] truncate font-medium text-slate-700" title={job.company}>{job.company}</span><span aria-hidden="true">·</span><span className="min-w-0 truncate" title={job.location}>{job.location}</span><span className="shrink-0 text-primary-deep">{job.eligibleCountries?.map(code => countryNames[code]).join(' / ')}</span><span className={'max-w-[180px] shrink-0 truncate rounded px-1.5 text-[11px] font-semibold leading-4 ' + jobStates[jobState(job, listing.latestImport)].badge}>{job.applied ? 'Applied · ' + (job.appliedProfiles?.map(mark => mark.profileName).join(', ') || 'Profile not recorded') : jobState(job, listing.latestImport)}</span>{isNewJob(job, listing.latestImport) && (job.viewed || job.applied) && <span className={'shrink-0 rounded px-1.5 text-[11px] font-semibold leading-4 ' + jobStates.New.badge}>New</span>}{job.isNewCompany && <span className="shrink-0 rounded bg-cyan-100 px-1.5 text-[11px] font-semibold text-cyan-950" title={'Company first discovered ' + when(job.companyFirstSeenAt || null)}>New company</span>}{job.site?.id === 'himalayas' && <a href="https://himalayas.app" target="_blank" rel="noopener noreferrer" className="shrink-0 text-primary underline">via Himalayas</a>}{job.hidden && <span className="text-amber-700">Hidden</span>}</div>
             {!!job.companyMatches?.length && <div className="flex flex-wrap items-center gap-1 text-xs leading-5">{job.companyMatches.slice(0,2).map(match => <a key={match.id} href={'/applications/' + match.id} onClick={event => { event.preventDefault(); router.push('/applications/' + match.id); }} className="max-w-full truncate rounded bg-amber-100 px-2 font-medium text-amber-950 hover:bg-amber-200" title={'Job company: ' + job.company + ' · My application company: ' + match.company + ' · Profile: ' + match.profileName}>Company match · {match.profileName || 'Profile not recorded'} · {match.company}</a>)}{job.companyMatches.length > 2 && <button className="rounded bg-amber-100 px-2 text-amber-950" onClick={() => void openJob(job)}>+{job.companyMatches.length-2} matches</button>}</div>}
           </div>
           <div className="flex shrink-0 flex-wrap items-center gap-1.5 text-xs [&>button]:px-2 [&>button]:py-1 [&>button]:text-xs [&>a]:px-2 [&>a]:py-1 [&>a]:text-xs">
-            <span className="mr-1 whitespace-nowrap text-xs text-slate-600"><PostingTime value={job.publishedAt} now={now} /></span>
+            <span className="mr-1 whitespace-nowrap text-xs text-slate-600"><PostingTime value={job.publishedAt} updated={job.sourceUpdatedAt} now={now} /></span>
             <button className={button} disabled={marking !== null} aria-label={(job.applied ? 'Manage applied profiles' : 'Mark applied') + ': ' + job.title} onClick={() => void openMark(job)}>{marking === job.id ? 'Saving…' : job.applied ? 'Applied · Manage' : 'Mark applied'}</button>
             {isMaster && <button className={button} disabled={busy} onClick={() => void mutate(() => api.hidePoolJob(job.id, !job.hidden), job.hidden ? 'Job visible to users.' : 'Job hidden from users.')}><EyeOff size={12} />{job.hidden ? 'Show job' : 'Hide'}</button>}
             <button className={button} onClick={() => void openJob(job)}>View job</button><a className={primary} href={job.jobUrl} onClick={() => void markViewed(job)} onAuxClick={event => { if (event.button === 1) void markViewed(job); }} target="_blank" rel="noopener noreferrer">Apply<ExternalLink size={12} /></a>
@@ -357,12 +365,12 @@ export default function JobPoolPage() {
         </div></article>)}</div>}
         <div ref={sentinel} data-testid="job-scroll-sentinel" className="flex min-h-20 flex-col items-center justify-center gap-2 border-t border-slate-200 p-4 text-sm text-slate-500" aria-live="polite">
           {moreError && <p role="alert" className="text-red-700">{moreError}</p>}
-          {loadingMore ? <span>Loading more jobs…</span> : listing?.nextCursor ? <button className={button} disabled={loading || marking !== null} onClick={() => void loadMore()}>{moreError ? 'Retry loading jobs' : 'Load more jobs'}</button> : !!listing?.jobs.length && <span>You’re all caught up · {listing.jobs.length.toLocaleString()} jobs shown</span>}
+          {loadingMore ? <span>Loading more jobs…</span> : listing?.nextCursor ? <button className={button} disabled={loading || marking !== null} onClick={() => void loadMore()}>{moreError ? 'Retry loading jobs' : 'Load more jobs'}</button> : !!listing?.jobs.length && <span>You’re all caught up · {listing.jobs.length.toLocaleString()} {listing.groupedByCompany ? 'companies' : 'jobs'} shown</span>}
         </div>
       </>}
     </section>
 
-    <p className="text-xs text-slate-500">Includes worldwide roles with confirmed eligibility for US, UK or Ireland applicants. Additional listings powered by <a href="https://remotejobs.org" target="_blank" rel="noopener noreferrer" className="text-primary underline">RemoteJobs.org</a>.</p>
+    <p className="text-xs text-slate-500">Includes worldwide roles with confirmed eligibility for US, UK or Ireland applicants. Additional listings powered by <a href="https://himalayas.app" target="_blank" rel="noopener noreferrer" className="text-primary underline">Himalayas</a> and <a href="https://remotejobs.org" target="_blank" rel="noopener noreferrer" className="text-primary underline">RemoteJobs.org</a>.</p>
 
     {markTarget && <Modal title={'Applied profiles · ' + markTarget.title} close={closeMark}>
       <p className="mb-4 text-sm text-slate-600">Record which profile you used for this job. Each profile has its own applied mark.</p>
@@ -373,7 +381,7 @@ export default function JobPoolPage() {
 
     {selected && <Modal title={selected.title} close={closeSelected}><p className="font-medium text-slate-700">{selected.company}</p><p className="mt-1 text-sm text-slate-500">{selected.location} · {workNames[selected.workArrangement]}{selected.employmentType ? ` · ${selected.employmentType}` : ''}</p>{selected.salary && <p className="mt-2 text-sm font-medium text-emerald-700">{selected.salary}</p>}
       {!!selected.companyMatches?.length && <div className="mt-3 rounded-lg bg-amber-50 p-3 text-sm text-amber-900"><p>Company match: {selected.company}</p>{selected.companyMatches.map(match => <a key={match.id} className="mt-1 block underline" href={'/applications/' + match.id} onClick={event => {event.preventDefault();router.push('/applications/' + match.id);}}>My application: {match.profileName || 'Profile not recorded'} · {match.company} · {match.jobTitle}</a>)}</div>}
-      <p className="mt-2 text-xs text-slate-500"><PostingTime value={selected.publishedAt} now={now} /></p>
+      <p className="mt-2 text-xs text-slate-500"><PostingTime value={selected.publishedAt} updated={selected.sourceUpdatedAt} now={now} /></p>
       <a href={selected.jobUrl} onClick={() => void markViewed(selected)} onAuxClick={event => { if (event.button === 1) void markViewed(selected); }} target="_blank" rel="noopener noreferrer" className="mt-2 inline-flex items-center gap-1 text-sm text-primary underline">Source: {selected.sourceName}<ExternalLink size={13} /></a>
       <div className="my-5 max-h-[40vh] overflow-y-auto whitespace-pre-wrap rounded-lg bg-slate-50 p-4 text-sm leading-6 text-slate-700">{selected.description}</div>
       {canBid && user?.canCreateApplications !== false && <div className="mb-5 rounded-xl border border-primary/20 bg-primary/5 p-4"><h3 className="font-medium text-slate-800">Prepare your application</h3><p className="mt-1 text-sm text-slate-500">Save this job using your profile, then generate and edit your resume and cover letter.</p>{profiles.length ? <div className="mt-3 flex flex-wrap items-end gap-3"><label className="min-w-40 flex-1 text-sm text-slate-600">Your profile<select className={field + ' mt-1'} value={profileId} onChange={event => setProfileId(event.target.value)}>{profiles.map(profile => <option key={profile.id} value={profile.id}>{profile.firstName} {profile.lastName}</option>)}</select></label><button className={primary} disabled={busy || !profileId} onClick={() => void createApplication()}>{busy ? 'Saving…' : 'Save and prepare resume'}</button></div> : <p className="mt-3 text-sm text-amber-700">You need an assigned profile to prepare a resume. Contact your administrator.</p>}</div>}
