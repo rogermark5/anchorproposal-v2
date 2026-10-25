@@ -1,0 +1,130 @@
+{
+  "checkedAt": "2026-10-25T03:08:08.813Z",
+  "timeZone": "America/Los_Angeles",
+  "databaseWrites": false,
+  "cached": true,
+  "rule": "Remote software roles eligible for US, UK or Ireland, posted today in the configured timezone; saved title exclusions apply.",
+  "sources": [
+    {
+      "provider": "arbeitnow",
+      "feed": "uk",
+      "pages": 2,
+      "complete": true,
+      "todayMatchingJobs": 0,
+      "companies": 0,
+      "companiesAbsentLocalHistory": 0,
+      "ms": 233
+    },
+    {
+      "provider": "arbeitnow",
+      "feed": "germany",
+      "pages": 3,
+      "complete": true,
+      "todayMatchingJobs": 0,
+      "companies": 0,
+      "companiesAbsentLocalHistory": 0,
+      "ms": 676
+    },
+    {
+      "provider": "arbeitnow",
+      "feed": "france",
+      "pages": 2,
+      "complete": true,
+      "todayMatchingJobs": 0,
+      "companies": 0,
+      "companiesAbsentLocalHistory": 0,
+      "ms": 102
+    },
+    {
+      "provider": "arbeitnow",
+      "feed": "switzerland",
+      "pages": 2,
+      "complete": true,
+      "todayMatchingJobs": 0,
+      "companies": 0,
+      "companiesAbsentLocalHistory": 0,
+      "ms": 206
+    },
+    {
+      "provider": "arbeitnow",
+      "feed": "netherlands",
+      "pages": 2,
+      "complete": true,
+      "todayMatchingJobs": 0,
+      "companies": 0,
+      "companiesAbsentLocalHistory": 0,
+      "ms": 318
+    },
+    {
+      "provider": "onjob",
+      "feed": "all",
+      "pages": 1,
+      "complete": true,
+      "todayMatchingJobs": 1,
+      "companies": 1,
+      "companiesAbsentLocalHistory": 1,
+      "ms": 391
+    },
+    {
+      "provider": "nomado",
+      "feed": "all",
+      "pages": 2,
+      "complete": true,
+      "todayMatchingJobs": 2,
+      "companies": 1,
+      "companiesAbsentLocalHistory": 0,
+      "ms": 162
+    },
+    {
+      "provider": "aidev",
+      "feed": "all",
+      "pages": 1,
+      "complete": true,
+      "todayMatchingJobs": 0,
+      "companies": 0,
+      "companiesAbsentLocalHistory": 0,
+      "ms": 2
+    },
+    {
+      "provider": "remote-network",
+      "feed": "frontend",
+      "pages": 4,
+      "complete": true,
+      "todayMatchingJobs": 0,
+      "companies": 0,
+      "companiesAbsentLocalHistory": 0,
+      "ms": 11
+    },
+    {
+      "provider": "remote-network",
+      "feed": "backend",
+      "pages": 5,
+      "complete": false,
+      "todayMatchingJobs": 0,
+      "companies": 0,
+      "companiesAbsentLocalHistory": 0,
+      "ms": 115
+    },
+    {
+      "provider": "remote-network",
+      "feed": "java",
+      "pages": 3,
+      "complete": true,
+      "todayMatchingJobs": 0,
+      "companies": 0,
+      "companiesAbsentLocalHistory": 0,
+      "ms": 20
+    }
+  ],
+  "summary": {
+    "uniqueSourceUrls": 3,
+    "distinctCompanyNames": 2,
+    "companiesAbsentLocalHistory": 1,
+    "byCountry": {
+      "US": 3,
+      "GB": 2,
+      "IE": 2
+    },
+    "note": "Snapshot of source URLs, before cross-provider content deduplication. Existing postings can upgrade missing metadata without creating a new job. This is not a guaranteed daily supply."
+  }
+}

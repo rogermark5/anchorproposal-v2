@@ -1,4 +1,12 @@
 const sites: [string, string, RegExp][] = [
+  ['aidev', 'AI Dev Jobs', /(^|\.)aidevboard\.com$/],
+  ['arbeitnow', 'Arbeitnow', /(^|\.)arbeitnow\.(com|co\.uk|fr|ch|nl)$/],
+  ['onjob', 'OnJob.io', /(^|\.)onjob\.io$/],
+  ['nomado', 'Nomado24', /(^|\.)nomado24\.com$/],
+  ['remote-network', 'Remote Frontend Jobs', /(^|\.)remotefrontendjobs\.com$/],
+  ['remotefirst', 'Remote First Jobs', /(^|\.)remotefirstjobs\.com$/],
+  ['wwr', 'We Work Remotely', /(^|\.)weworkremotely\.com$/],
+  ['himalayas', 'Himalayas', /(^|\.)himalayas\.app$/],
   ['workday', 'Workday', /(^|\.)(myworkdayjobs|myworkdaysite)\.com$/],
   ['greenhouse', 'Greenhouse', /(^|\.)(greenhouse\.io|greenhouse\.com)$/],
   ['lever', 'Lever', /(^|\.)lever\.co$/], ['ashby', 'Ashby', /(^|\.)ashbyhq\.com$/],

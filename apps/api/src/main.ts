@@ -1,6 +1,8 @@
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { AppModule } from './app.module';
+import type { NestExpressApplication } from '@nestjs/platform-express';
+import { configureJsonBody } from './common/json-body';
 
 function resolveCorsOrigins(): string[] | boolean {
   const configured = (process.env.CORS_ORIGIN || '')
@@ -19,7 +21,8 @@ function resolveCorsOrigins(): string[] | boolean {
 }
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create<NestExpressApplication>(AppModule);
+  configureJsonBody(app);
   app.enableCors({ origin: resolveCorsOrigins(), credentials: true, exposedHeaders: ['Content-Disposition'] });
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
   const port = process.env.API_PORT || 3001;

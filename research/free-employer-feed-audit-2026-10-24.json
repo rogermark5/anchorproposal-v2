@@ -1,0 +1,709 @@
+{
+  "checkedAt": "2026-10-25T02:52:46.867Z",
+  "scope": "US/GB/IE remote software sources, last two source-posting days; not all are today or unique employers",
+  "planned": 116,
+  "results": [
+    {
+      "source": "trudvsem",
+      "status": 200,
+      "total": 0,
+      "hasDescription": false
+    },
+    {
+      "source": "careerplug",
+      "status": 200,
+      "total": 0,
+      "hasDescription": false
+    },
+    {
+      "source": "isolvedhire",
+      "status": 200,
+      "total": 0,
+      "hasDescription": false
+    },
+    {
+      "source": "personio",
+      "status": 200,
+      "total": 2,
+      "sampleSource": "personio",
+      "samplePublishedAt": "2026-10-23T16:53:44Z",
+      "hasDescription": true
+    },
+    {
+      "source": "gupy",
+      "status": 200,
+      "total": 0,
+      "hasDescription": false
+    },
+    {
+      "source": "feishujobs",
+      "status": 200,
+      "total": 0,
+      "hasDescription": false
+    },
+    {
+      "source": "applitrack",
+      "status": 200,
+      "total": 0,
+      "hasDescription": false
+    },
+    {
+      "source": "pandape",
+      "status": 200,
+      "total": 0,
+      "hasDescription": false
+    },
+    {
+      "source": "jobappnetwork",
+      "status": 200,
+      "total": 0,
+      "hasDescription": false
+    },
+    {
+      "source": "betterteam",
+      "status": 200,
+      "total": 0,
+      "hasDescription": false
+    },
+    {
+      "source": "tenstreet",
+      "status": 200,
+      "total": 0,
+      "hasDescription": false
+    },
+    {
+      "source": "gethired",
+      "status": 200,
+      "total": 0,
+      "hasDescription": false
+    },
+    {
+      "source": "applicantstack",
+      "status": 200,
+      "total": 2,
+      "sampleSource": "applicantstack",
+      "samplePublishedAt": "2026-10-23T17:54:16Z",
+      "hasDescription": true
+    },
+    {
+      "source": "hireclick",
+      "status": 200,
+      "total": 0,
+      "hasDescription": false
+    },
+    {
+      "source": "hcshiring",
+      "status": 200,
+      "total": 0,
+      "hasDescription": false
+    },
+    {
+      "source": "arbeitsagentur",
+      "status": 200,
+      "total": 0,
+      "hasDescription": false
+    },
+    {
+      "source": "solides",
+      "status": 200,
+      "total": 0,
+      "hasDescription": false
+    },
+    {
+      "source": "harri",
+      "status": 200,
+      "total": 0,
+      "hasDescription": false
+    },
+    {
+      "source": "pageup",
+      "status": 200,
+      "total": 0,
+      "hasDescription": false
+    },
+    {
+      "source": "softgarden",
+      "status": 200,
+      "total": 0,
+      "hasDescription": false
+    },
+    {
+      "source": "inhire",
+      "status": 200,
+      "total": 0,
+      "hasDescription": false
+    },
+    {
+      "source": "hrmos",
+      "status": 200,
+      "total": 0,
+      "hasDescription": false
+    },
+    {
+      "source": "traffit",
+      "status": 200,
+      "total": 0,
+      "hasDescription": false
+    },
+    {
+      "source": "herp",
+      "status": 200,
+      "total": 0,
+      "hasDescription": false
+    },
+    {
+      "source": "earcu",
+      "status": 200,
+      "total": 0,
+      "hasDescription": false
+    },
+    {
+      "source": "pandapelatam",
+      "status": 200,
+      "total": 0,
+      "hasDescription": false
+    },
+    {
+      "source": "potok",
+      "status": 200,
+      "total": 0,
+      "hasDescription": false
+    },
+    {
+      "source": "higherme",
+      "status": 200,
+      "total": 0,
+      "hasDescription": false
+    },
+    {
+      "source": "idealtraits",
+      "status": 200,
+      "total": 0,
+      "hasDescription": false
+    },
+    {
+      "source": "paradox",
+      "status": 200,
+      "total": 0,
+      "hasDescription": false
+    },
+    {
+      "source": "erecruiter",
+      "status": 200,
+      "total": 0,
+      "hasDescription": false
+    },
+    {
+      "source": "eploy",
+      "status": 200,
+      "total": 0,
+      "hasDescription": false
+    },
+    {
+      "source": "quickin",
+      "status": 200,
+      "total": 0,
+      "hasDescription": false
+    },
+    {
+      "source": "hrmanager",
+      "status": 200,
+      "total": 0,
+      "hasDescription": false
+    },
+    {
+      "source": "humanbit",
+      "status": 200,
+      "total": 0,
+      "hasDescription": false
+    },
+    {
+      "source": "appone",
+      "status": 200,
+      "total": 1,
+      "sampleSource": "appone",
+      "samplePublishedAt": "2026-10-23T20:21:24Z",
+      "hasDescription": true
+    },
+    {
+      "source": "peoplesoft",
+      "status": 200,
+      "total": 0,
+      "hasDescription": false
+    },
+    {
+      "source": "senior",
+      "status": 200,
+      "total": 0,
+      "hasDescription": false
+    },
+    {
+      "source": "luxoft",
+      "status": 200,
+      "total": 0,
+      "hasDescription": false
+    },
+    {
+      "source": "beesite",
+      "status": 200,
+      "total": 0,
+      "hasDescription": false
+    },
+    {
+      "source": "flatchr",
+      "status": 200,
+      "total": 0,
+      "hasDescription": false
+    },
+    {
+      "source": "emply",
+      "status": 200,
+      "total": 0,
+      "hasDescription": false
+    },
+    {
+      "source": "huntflow",
+      "status": 200,
+      "total": 0,
+      "hasDescription": false
+    },
+    {
+      "source": "cleverstaff",
+      "status": 200,
+      "total": 0,
+      "hasDescription": false
+    },
+    {
+      "source": "wpyoast",
+      "status": 200,
+      "total": 0,
+      "hasDescription": false
+    },
+    {
+      "source": "hiringroom",
+      "status": 200,
+      "total": 0,
+      "hasDescription": false
+    },
+    {
+      "source": "friendwork",
+      "status": 200,
+      "total": 0,
+      "hasDescription": false
+    },
+    {
+      "source": "mokahr",
+      "status": 200,
+      "total": 0,
+      "hasDescription": false
+    },
+    {
+      "source": "opencats",
+      "status": 200,
+      "total": 0,
+      "hasDescription": false
+    },
+    {
+      "source": "polymer",
+      "status": 200,
+      "total": 0,
+      "hasDescription": false
+    },
+    {
+      "source": "dover",
+      "status": 200,
+      "total": 0,
+      "hasDescription": false
+    },
+    {
+      "source": "workablemarketplace",
+      "status": 200,
+      "total": 0,
+      "hasDescription": false
+    },
+    {
+      "source": "scalis",
+      "status": 200,
+      "total": 0,
+      "hasDescription": false
+    },
+    {
+      "source": "geekhunter",
+      "status": 200,
+      "total": 0,
+      "hasDescription": false
+    },
+    {
+      "source": "compleo",
+      "status": 200,
+      "total": 0,
+      "hasDescription": false
+    },
+    {
+      "source": "bullhorn",
+      "status": 200,
+      "total": 0,
+      "hasDescription": false
+    },
+    {
+      "source": "jobspage",
+      "status": 200,
+      "total": 0,
+      "hasDescription": false
+    },
+    {
+      "source": "vention",
+      "status": 200,
+      "total": 0,
+      "hasDescription": false
+    },
+    {
+      "source": "hurma",
+      "status": 200,
+      "total": 0,
+      "hasDescription": false
+    },
+    {
+      "source": "northstone",
+      "status": 200,
+      "total": 0,
+      "hasDescription": false
+    },
+    {
+      "source": "recrutei",
+      "status": 200,
+      "total": 0,
+      "hasDescription": false
+    },
+    {
+      "source": "pyjamahr",
+      "status": 200,
+      "total": 0,
+      "hasDescription": false
+    },
+    {
+      "source": "rapyd",
+      "status": 200,
+      "total": 0,
+      "hasDescription": false
+    },
+    {
+      "source": "speedrun",
+      "status": 200,
+      "total": 0,
+      "hasDescription": false
+    },
+    {
+      "source": "likeit",
+      "status": 200,
+      "total": 0,
+      "hasDescription": false
+    },
+    {
+      "source": "odoo",
+      "status": 200,
+      "total": 0,
+      "hasDescription": false
+    },
+    {
+      "source": "clinch",
+      "status": 200,
+      "total": 0,
+      "hasDescription": false
+    },
+    {
+      "source": "enlizt",
+      "status": 200,
+      "total": 0,
+      "hasDescription": false
+    },
+    {
+      "source": "spark",
+      "status": 200,
+      "total": 0,
+      "hasDescription": false
+    },
+    {
+      "source": "talentadore",
+      "status": 200,
+      "total": 0,
+      "hasDescription": false
+    },
+    {
+      "source": "talenthr",
+      "status": 200,
+      "total": 0,
+      "hasDescription": false
+    },
+    {
+      "source": "google",
+      "status": 200,
+      "total": 0,
+      "hasDescription": false
+    },
+    {
+      "source": "alibaba",
+      "status": 200,
+      "total": 0,
+      "hasDescription": false
+    },
+    {
+      "source": "sber",
+      "status": 200,
+      "total": 0,
+      "hasDescription": false
+    },
+    {
+      "source": "alfabank",
+      "status": 200,
+      "total": 0,
+      "hasDescription": false
+    },
+    {
+      "source": "mts",
+      "status": 200,
+      "total": 0,
+      "hasDescription": false
+    },
+    {
+      "source": "emagine",
+      "status": 200,
+      "total": 0,
+      "hasDescription": false
+    },
+    {
+      "source": "meituan",
+      "status": 200,
+      "total": 0,
+      "hasDescription": false
+    },
+    {
+      "source": "yandex",
+      "status": 200,
+      "total": 0,
+      "hasDescription": false
+    },
+    {
+      "source": "x5",
+      "status": 200,
+      "total": 0,
+      "hasDescription": false
+    },
+    {
+      "source": "tbank",
+      "status": 200,
+      "total": 0,
+      "hasDescription": false
+    },
+    {
+      "source": "vk",
+      "status": 200,
+      "total": 0,
+      "hasDescription": false
+    },
+    {
+      "source": "megafon",
+      "status": 200,
+      "total": 0,
+      "hasDescription": false
+    },
+    {
+      "source": "rostelecom",
+      "status": 200,
+      "total": 0,
+      "hasDescription": false
+    },
+    {
+      "source": "micro1",
+      "status": 200,
+      "total": 0,
+      "hasDescription": false
+    },
+    {
+      "source": "lamoda",
+      "status": 200,
+      "total": 0,
+      "hasDescription": false
+    },
+    {
+      "source": "orion",
+      "status": 200,
+      "total": 0,
+      "hasDescription": false
+    },
+    {
+      "source": "avito",
+      "status": 200,
+      "total": 0,
+      "hasDescription": false
+    },
+    {
+      "source": "dataart",
+      "status": 200,
+      "total": 0,
+      "hasDescription": false
+    },
+    {
+      "source": "kaspersky",
+      "status": 200,
+      "total": 0,
+      "hasDescription": false
+    },
+    {
+      "source": "rwb",
+      "status": 200,
+      "total": 0,
+      "hasDescription": false
+    },
+    {
+      "source": "uzum",
+      "status": 200,
+      "total": 0,
+      "hasDescription": false
+    },
+    {
+      "source": "halyk",
+      "status": 200,
+      "total": 0,
+      "hasDescription": false
+    },
+    {
+      "source": "garena",
+      "status": 200,
+      "total": 0,
+      "hasDescription": false
+    },
+    {
+      "source": "staffy",
+      "status": 200,
+      "total": 0,
+      "hasDescription": false
+    },
+    {
+      "source": "yandexcrowd",
+      "status": 200,
+      "total": 0,
+      "hasDescription": false
+    },
+    {
+      "source": "kaspi",
+      "status": 200,
+      "total": 0,
+      "hasDescription": false
+    },
+    {
+      "source": "magnit",
+      "status": 200,
+      "total": 0,
+      "hasDescription": false
+    },
+    {
+      "source": "kontur",
+      "status": 200,
+      "total": 0,
+      "hasDescription": false
+    },
+    {
+      "source": "tochka",
+      "status": 200,
+      "total": 0,
+      "hasDescription": false
+    },
+    {
+      "source": "lesta",
+      "status": 200,
+      "total": 0,
+      "hasDescription": false
+    },
+    {
+      "source": "selectel",
+      "status": 200,
+      "total": 0,
+      "hasDescription": false
+    },
+    {
+      "source": "aviasales",
+      "status": 200,
+      "total": 0,
+      "hasDescription": false
+    },
+    {
+      "source": "ozon",
+      "status": 200,
+      "total": 0,
+      "hasDescription": false
+    },
+    {
+      "source": "dodo",
+      "status": 200,
+      "total": 0,
+      "hasDescription": false
+    },
+    {
+      "source": "ptsecurity",
+      "status": 200,
+      "total": 0,
+      "hasDescription": false
+    },
+    {
+      "source": "domclick",
+      "status": 200,
+      "total": 0,
+      "hasDescription": false
+    },
+    {
+      "source": "2gis",
+      "status": 200,
+      "total": 0,
+      "hasDescription": false
+    },
+    {
+      "source": "onstrider",
+      "status": 200,
+      "total": 0,
+      "hasDescription": false
+    },
+    {
+      "source": "10ml",
+      "status": 200,
+      "total": 0,
+      "hasDescription": false
+    },
+    {
+      "source": "tencent",
+      "status": 200,
+      "total": 0,
+      "hasDescription": false
+    },
+    {
+      "source": "telegramcareers",
+      "status": 200,
+      "total": 0,
+      "hasDescription": false
+    },
+    {
+      "source": "alignerr",
+      "status": 200,
+      "total": 0,
+      "hasDescription": false
+    },
+    {
+      "source": "jettycloud",
+      "status": 200,
+      "total": 0,
+      "hasDescription": false
+    },
+    {
+      "source": "kuper",
+      "status": 200,
+      "total": 0,
+      "hasDescription": false
+    },
+    {
+      "source": "mtslink",
+      "status": 200,
+      "total": 0,
+      "hasDescription": false
+    }
+  ]
+}

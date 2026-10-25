@@ -2,10 +2,11 @@ import { Module } from '@nestjs/common';
 import { JobPoolController } from './job-pool.controller';
 import { JobPoolService } from './job-pool.service';
 import { ApplicationsModule } from '../applications/applications.module';
+import { CompanyDiscoveryService } from './company-discovery.service';
 
 @Module({
   imports: [ApplicationsModule],
   controllers: [JobPoolController],
-  providers: [JobPoolService],
+  providers: [JobPoolService, CompanyDiscoveryService],
 })
 export class JobPoolModule {}

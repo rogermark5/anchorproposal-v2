@@ -1,0 +1,540 @@
+{
+  "researchDateLocal": "2026-10-23",
+  "timezone": "America/Los_Angeles",
+  "completedAt": "2026-10-24T00:04:55.710Z",
+  "conclusion": {
+    "recommendedNewFreeFeed": "Himalayas",
+    "recommendedExistingFeed": "Ocean of Jobs",
+    "requested100000SourcesVerified": false,
+    "sourceExpansionApplied": false,
+    "databaseWritesPerformed": false,
+    "reason": "The research did not verify 100,000 active distinct employer sources with eligible remote software jobs. Provider totals, directory entries and job counts are different units."
+  },
+  "method": {
+    "countries": [
+      "US",
+      "GB",
+      "IE"
+    ],
+    "workArrangement": "remote",
+    "excludedTitleKeywords": [
+      "staff",
+      "principal",
+      "architect",
+      "junior",
+      "lead",
+      "director"
+    ],
+    "employerNormalization": "Lowercase employer name and remove all whitespace, matching the current company-comparison rule.",
+    "noveltyReference": "Local stored Job Pool history; no private application or profile content was queried or sent to providers.",
+    "descriptionValidation": "Full descriptions checked using the existing software occupation classifier and excluded-title rules; structured country/timezone metadata checked where available. Not manual verification of work authorization.",
+    "noDailyGuarantee": "One snapshot cannot establish how many first-ever employers arrive each day. Himalayas pubDate means last updated, not original posting time."
+  },
+  "localDatabase": {
+    "checkedAt": "2026-10-23T23:57:46.885Z",
+    "configuredSources": 30000,
+    "exclusions": [
+      "staff",
+      "principal",
+      "architect",
+      "junior",
+      "lead",
+      "director"
+    ],
+    "available": {
+      "jobs": 9891,
+      "companies": 3556,
+      "additionalJobsAtSameCompanies": 6335
+    },
+    "freshness": {
+      "lastSeenAt": "2026-10-21T10:31:02.880Z",
+      "createdAt": "2026-10-21T10:24:09.188Z",
+      "publishedAt": "2026-10-21T10:13:31.667Z"
+    },
+    "byCountry": {
+      "US": {
+        "jobs": 8806,
+        "companies": 3238,
+        "additionalJobsAtSameCompanies": 5568
+      },
+      "GB": {
+        "jobs": 1111,
+        "companies": 495,
+        "additionalJobsAtSameCompanies": 616
+      },
+      "IE": {
+        "jobs": 388,
+        "companies": 156,
+        "additionalJobsAtSameCompanies": 232
+      }
+    },
+    "byProvider": {
+      "paylocity": {
+        "jobs": 127,
+        "companies": 68,
+        "additionalJobsAtSameCompanies": 59
+      },
+      "ashby": {
+        "jobs": 1227,
+        "companies": 469,
+        "additionalJobsAtSameCompanies": 758
+      },
+      "freehire": {
+        "jobs": 4603,
+        "companies": 1949,
+        "additionalJobsAtSameCompanies": 2654
+      },
+      "greenhouse": {
+        "jobs": 1538,
+        "companies": 482,
+        "additionalJobsAtSameCompanies": 1056
+      },
+      "breezy": {
+        "jobs": 169,
+        "companies": 62,
+        "additionalJobsAtSameCompanies": 107
+      },
+      "jobicy": {
+        "jobs": 145,
+        "companies": 84,
+        "additionalJobsAtSameCompanies": 61
+      },
+      "smartrecruiters": {
+        "jobs": 186,
+        "companies": 72,
+        "additionalJobsAtSameCompanies": 114
+      },
+      "bamboohr": {
+        "jobs": 55,
+        "companies": 36,
+        "additionalJobsAtSameCompanies": 19
+      },
+      "workable": {
+        "jobs": 105,
+        "companies": 57,
+        "additionalJobsAtSameCompanies": 48
+      },
+      "lever": {
+        "jobs": 613,
+        "companies": 196,
+        "additionalJobsAtSameCompanies": 417
+      },
+      "recruitee": {
+        "jobs": 96,
+        "companies": 27,
+        "additionalJobsAtSameCompanies": 69
+      },
+      "ocean": {
+        "jobs": 641,
+        "companies": 194,
+        "additionalJobsAtSameCompanies": 447
+      },
+      "remotejobs": {
+        "jobs": 263,
+        "companies": 137,
+        "additionalJobsAtSameCompanies": 126
+      },
+      "personio": {
+        "jobs": 2,
+        "companies": 2,
+        "additionalJobsAtSameCompanies": 0
+      },
+      "freehire-global": {
+        "jobs": 87,
+        "companies": 48,
+        "additionalJobsAtSameCompanies": 39
+      },
+      "remoteok": {
+        "jobs": 3,
+        "companies": 3,
+        "additionalJobsAtSameCompanies": 0
+      },
+      "pinpoint": {
+        "jobs": 31,
+        "companies": 15,
+        "additionalJobsAtSameCompanies": 16
+      }
+    },
+    "timeWindows": {
+      "24h": {
+        "jobs": 0,
+        "companies": 0,
+        "additionalJobsAtSameCompanies": 0
+      },
+      "72h": {
+        "jobs": 35,
+        "companies": 25,
+        "additionalJobsAtSameCompanies": 10
+      },
+      "168h": {
+        "jobs": 846,
+        "companies": 382,
+        "additionalJobsAtSameCompanies": 464
+      },
+      "720h": {
+        "jobs": 3806,
+        "companies": 1640,
+        "additionalJobsAtSameCompanies": 2166
+      }
+    },
+    "limits": "This is the database configured on this machine, not necessarily the Ubuntu production database. Companies use lowercase names with whitespace removed. A single snapshot measures recently posted employers, not first-ever employers or a guaranteed future daily supply."
+  },
+  "historicalCatalogEvidence": {
+    "frozenDirectoryEntries": 75660,
+    "additionalSupportedUnregisteredCandidates": 13689,
+    "lastExpansionSources": 16997,
+    "lastExpansionBoardsWithSoftwareOnCheckedPages": 2450,
+    "remoteEligibilityInHistoricalExpansion": "Not measured in the saved board-verification summaries.",
+    "directoryCandidatesAreNotVerifiedEmployers": true
+  },
+  "feedResults": [
+    {
+      "provider": "ocean",
+      "rawUniqueJobsTested": 7075,
+      "rawCompanies": 1542,
+      "filteredJobs": 2419,
+      "filteredCompanyNames": 725,
+      "companiesAbsentActiveLocalPool": 119,
+      "companiesAbsentLocalHistory": 99,
+      "fullDescriptionCheckedJobs": 0,
+      "completeFilteredListingScan": true,
+      "scope": "All 15 metadata pages for the specified country/remote/department query; title candidates only until detail validation.",
+      "sourceDateMeaning": "provider publication timestamp",
+      "sourceTimestampWithin24hCompanies": 42
+    },
+    {
+      "provider": "himalayas",
+      "rawUniqueJobsTested": 609,
+      "rawCompanies": 364,
+      "filteredJobs": 269,
+      "filteredCompanyNames": 158,
+      "companiesAbsentActiveLocalPool": 100,
+      "companiesAbsentLocalHistory": 95,
+      "fullDescriptionCheckedJobs": 269,
+      "completeFilteredListingScan": false,
+      "scope": "Bounded software search across US/GB/IE, 39 pages; not the complete feed.",
+      "sourceDateMeaning": "last updated, not first published",
+      "sourceTimestampWithin24hCompanies": 70
+    },
+    {
+      "provider": "jobicy",
+      "rawUniqueJobsTested": 587,
+      "rawCompanies": 196,
+      "filteredJobs": 81,
+      "filteredCompanyNames": 50,
+      "companiesAbsentActiveLocalPool": 3,
+      "companiesAbsentLocalHistory": 1,
+      "fullDescriptionCheckedJobs": 81,
+      "completeFilteredListingScan": false,
+      "scope": "Up to three pages per US/UK/Ireland/worldwide geography.",
+      "sourceDateMeaning": "provider publication timestamp",
+      "sourceTimestampWithin24hCompanies": 23
+    },
+    {
+      "provider": "remotejobs",
+      "rawUniqueJobsTested": 450,
+      "rawCompanies": 252,
+      "filteredJobs": 59,
+      "filteredCompanyNames": 31,
+      "companiesAbsentActiveLocalPool": 2,
+      "companiesAbsentLocalHistory": 2,
+      "fullDescriptionCheckedJobs": 59,
+      "completeFilteredListingScan": false,
+      "scope": "First three pages each of programming, DevOps and data science.",
+      "sourceDateMeaning": "provider publication timestamp",
+      "sourceTimestampWithin24hCompanies": 3
+    },
+    {
+      "provider": "freehire",
+      "rawUniqueJobsTested": 100,
+      "rawCompanies": 73,
+      "filteredJobs": 50,
+      "filteredCompanyNames": 41,
+      "companiesAbsentActiveLocalPool": 15,
+      "companiesAbsentLocalHistory": 13,
+      "fullDescriptionCheckedJobs": 50,
+      "completeFilteredListingScan": false,
+      "scope": "One 100-job research sample; personal/non-commercial free access only.",
+      "sourceDateMeaning": "provider publication timestamp",
+      "sourceTimestampWithin24hCompanies": 41
+    },
+    {
+      "provider": "remoteok",
+      "rawUniqueJobsTested": 99,
+      "rawCompanies": 92,
+      "filteredJobs": 2,
+      "filteredCompanyNames": 2,
+      "companiesAbsentActiveLocalPool": 0,
+      "companiesAbsentLocalHistory": 0,
+      "fullDescriptionCheckedJobs": 2,
+      "completeFilteredListingScan": true,
+      "scope": "Bounded public feed sample.",
+      "sourceDateMeaning": "provider publication timestamp",
+      "sourceTimestampWithin24hCompanies": 0
+    },
+    {
+      "provider": "arbeitnow",
+      "rawUniqueJobsTested": 300,
+      "rawCompanies": 146,
+      "filteredJobs": 0,
+      "filteredCompanyNames": 0,
+      "companiesAbsentActiveLocalPool": 0,
+      "companiesAbsentLocalHistory": 0,
+      "fullDescriptionCheckedJobs": 0,
+      "completeFilteredListingScan": false,
+      "scope": "Bounded public feed sample.",
+      "sourceDateMeaning": "provider publication timestamp",
+      "sourceTimestampWithin24hCompanies": 0
+    }
+  ],
+  "oceanDescriptionCheck": {
+    "candidateCompaniesAbsentHistory": 99,
+    "checked": 99,
+    "qualifyingCompanies": 71,
+    "qualifyingCompaniesByCountry": {
+      "US": 58,
+      "GB": 13,
+      "IE": 0
+    },
+    "failures": [],
+    "note": "One candidate job per company, at most 100 companies; this is not a complete Ocean body audit."
+  },
+  "combinedIncrementalCompanies": {
+    "himalayas": 95,
+    "ocean": 71,
+    "overlap": 1,
+    "total": 165,
+    "byCountry": {
+      "US": 139,
+      "GB": 80,
+      "IE": 62
+    },
+    "note": "Novel to local job history under name normalization; snapshot, not a measured daily arrival rate. A company can qualify in several countries."
+  },
+  "otherProviderTests": {
+    "headcountLabs": {
+      "restWithoutKeyStatus": 401,
+      "publicMcpSampleJobs": 10,
+      "localFilterPassingJobs": 5,
+      "passingCompanyNames": 5,
+      "passingCompaniesAbsentActiveLocalPool": 1,
+      "broadCount": 5888,
+      "broadCountIsEstimate": true,
+      "estimateMargin": 2402,
+      "posted24hCountResult": "HTTP 504 query_timeout inside a tool error",
+      "sampleDatasetWatermark": "2026-10-21T22:10:37.414Z",
+      "productionRecommendation": "Promising breadth; requires a free account/key for REST. Trial daily freshness and employer novelty before integrating. Keep paid usage disabled and the spend cap at zero.",
+      "freeAllowance": "100,000 delivered job/company/change-event records per organization per UTC month; re-fetches consume records again. This is not 100,000 employer sources.",
+      "freeLimits": "30 requests/minute and 1,000 requests/UTC day.",
+      "publicMcpUse": "Small read-only research only. Public MCP terms prohibit automated bulk copying."
+    },
+    "remotive": {
+      "liveTested": false,
+      "reason": "Documented free API restrictions on signup/email-gated displays do not fit the current authenticated app."
+    },
+    "adzuna": {
+      "liveTested": false,
+      "reason": "Requires registered app credentials not available in the environment."
+    }
+  },
+  "recommendations": [
+    "Retain all current jobs and direct employer board imports; add Himalayas as a supplemental feed with visible attribution and its supplied applicationLink.",
+    "Default to one representative eligible job per company, with other roles expandable, while retaining all stored job records.",
+    "Exclude companies already applied to by the current user across that user's applications and profile-specific applied marks; retain an opt-in way to show them.",
+    "Track the first-ever encounter with a company separately from job publication, provider last-update and import times. Report newly encountered companies per rolling 24 hours and measure the arrival rate over multiple days.",
+    "Use stable company IDs/domains and curated aliases where possible, preserving the user's exact name-normalization matching as the baseline.",
+    "Do not generate placeholder boards, duplicate provider configurations or stale entries to reach a numerical source target."
+  ],
+  "providerTermsAndEvidence": [
+    {
+      "provider": "Himalayas",
+      "url": "https://himalayas.app/docs/remote-jobs-api",
+      "finding": "Free without a key, personal/commercial own-app display permitted; visible credit and supplied Himalayas applicationLink required. Keyed limits 60/min and 10,000/day. pubDate is last updated."
+    },
+    {
+      "provider": "Ocean of Jobs",
+      "url": "https://oceanofjobs.com/",
+      "finding": "Official page lists REST API and MCP access as free."
+    },
+    {
+      "provider": "Ocean of Jobs API",
+      "url": "https://oceanofjobs.com/api/openapi.json",
+      "finding": "Live keyless listing/detail API used in this research."
+    },
+    {
+      "provider": "RemoteJobs.org",
+      "url": "https://remotejobs.org/developers/api",
+      "finding": "Free keyless public API; provider attribution and supplied application URL required."
+    },
+    {
+      "provider": "Freehire",
+      "url": "https://freehire.me/docs/api",
+      "finding": "Public free reads are personal/non-commercial; offering postings through a product to others requires an API plan."
+    },
+    {
+      "provider": "Headcount Labs quota",
+      "url": "https://headcountlabs.com/docs/rate-limits/",
+      "finding": "100,000 records/month free; re-deliveries and changes count; quota and request caps must be enforced."
+    },
+    {
+      "provider": "Headcount Labs terms",
+      "url": "https://headcountlabs.com/terms/",
+      "finding": "Own-app display permitted subject to terms and third-party rights; public MCP access is free but not for automated bulk copying."
+    },
+    {
+      "provider": "Open Jobs",
+      "url": "https://github.com/elliottdehn/open-jobs",
+      "finding": "Directory/snapshot can seed discovery, but the published dataset is frozen at October 5, 2026 and the live index shut down October 10."
+    },
+    {
+      "provider": "Jobicy",
+      "url": "https://github.com/Jobicy/remote-jobs-api",
+      "finding": "Free public remote-job feed tested as a supplemental source."
+    },
+    {
+      "provider": "Arbeitnow",
+      "url": "https://www.arbeitnow.com/blog/job-board-api",
+      "finding": "Public API tested; no matching eligible US/UK/IE remote software employer in the first 300 records."
+    },
+    {
+      "provider": "Remotive",
+      "url": "https://remotive.com/remote-jobs/api",
+      "finding": "Terms reviewed; not live benchmarked."
+    }
+  ],
+  "limitations": [
+    "Name matches can miss spelling aliases; new means absent from this local pool snapshot, not never encountered by this user.",
+    "Provider samples have different sizes and completeness. Himalayas dates mean last update. Ocean listing-only candidates need description checks.",
+    "The local database last saw a job on October 21; gains versus a freshly importing Ubuntu deployment may be smaller.",
+    "Name-normalized companies are not verified legal entities, and aliases can inflate novelty.",
+    "Different provider sample sizes prevent treating the results as a complete market-share ranking.",
+    "The 165 combined company names are potential snapshot additions, not jobs imported, new sources created, or guaranteed new companies per day."
+  ],
+  "reproduction": {
+    "requirements": "Installed workspace dependencies, generated Prisma client and compiled apps/api/dist (the normal API build). Run commands from apps/api. No HTTP import routes or migrations are invoked.",
+    "auditCommand": "node scripts/audit-job-companies.cjs",
+    "researchOutputDirectory": "tmp/job-pool-qa/company-diversity-2026-10-23 (ignored; full public responses and hashed employer comparison sets)",
+    "sequence": [
+      "node scripts/probe-job-diversity.cjs oceanSpec",
+      "node scripts/audit-job-companies.cjs --output=../../tmp/job-pool-qa/company-diversity-2026-10-23/local-database-audit.json --companies-output=../../tmp/job-pool-qa/company-diversity-2026-10-23/company-hashes.json",
+      "node scripts/benchmark-job-diversity.cjs ocean himalayas jobicy remotejobs arbeitnow remoteok",
+      "node scripts/compare-job-diversity.cjs --verify-ocean",
+      "node scripts/probe-headcount-diversity.cjs --sample-only"
+    ],
+    "note": "Comparison expects all seven feed benchmark files; Freehire is intentionally a separate personal/non-commercial research run: node scripts/benchmark-job-diversity.cjs freehire. Use --cached with the benchmark to reanalyze existing snapshots without more HTTP requests.",
+    "dailySupplyCommand": "node scripts/measure-daily-company-supply.cjs",
+    "dailySupplyCachedCommand": "node scripts/measure-daily-company-supply.cjs --cached"
+  },
+  "userTarget": {
+    "newCompaniesPerRolling24h": 1000,
+    "countries": [
+      "US",
+      "GB",
+      "IE"
+    ],
+    "monthlyEquivalent30Days": 30000,
+    "definition": "1,000 distinct new employers per rolling 24 hours across the three countries combined, with previously applied-to employers excluded.",
+    "measurementProxy": "The current tests count distinct eligible companies and separately compare them to local Job Pool history. They do not measure the current user's unapplied companies.",
+    "feasibility": "Not demonstrated. The complete recent Freehire query yielded far fewer than 1,000 eligible company names; other provider samples do not establish a sustained 1,000-new-company daily rate. This is not proof of a market-wide impossibility."
+  },
+  "updatedAt": "2026-10-24T01:26:49.310Z",
+  "dailySupplyMeasurement": {
+    "provider": "Freehire",
+    "checkedAt": "2026-10-24T01:23:20.096Z",
+    "analyzedAt": "2026-10-24T01:25:52.873Z",
+    "cached": true,
+    "rolling24hStart": "2026-10-23T01:23:20.096Z",
+    "targetNewCompaniesPerDay": 1000,
+    "scope": "Current production Freehire role categories; remote; US/GB/IE or explicit worldwide; supported direct employer ATS sources only; existing excluded titles.",
+    "modes": [
+      {
+        "mode": "posted_within_days",
+        "dateField": "posted_at",
+        "complete": true,
+        "pages": 12,
+        "providerTotalsObserved": [
+          1146,
+          1146,
+          1146,
+          1146,
+          1146,
+          1146,
+          1146,
+          1146,
+          1146,
+          1146,
+          1146,
+          1146
+        ],
+        "rawUniqueJobs": 1146,
+        "rolling24hJobs": 1146,
+        "rolling24hCompanyNames": 607,
+        "filteredJobs": 252,
+        "filteredCompanyNames": 130,
+        "filteredCompaniesAbsentLocalHistory": 29,
+        "targetMetInThisSample": false
+      },
+      {
+        "mode": "open_within_days",
+        "dateField": "created_at",
+        "complete": true,
+        "pages": 12,
+        "providerTotalsObserved": [
+          1201,
+          1201,
+          1200,
+          1200,
+          1199,
+          1199,
+          1199,
+          1199,
+          1197,
+          1197,
+          1197,
+          1197
+        ],
+        "rawUniqueJobs": 1197,
+        "rolling24hJobs": 1197,
+        "rolling24hCompanyNames": 720,
+        "filteredJobs": 223,
+        "filteredCompanyNames": 122,
+        "filteredCompaniesAbsentLocalHistory": 47,
+        "targetMetInThisSample": false
+      }
+    ],
+    "limitations": [
+      "This is one rolling 24-hour snapshot from one provider, not a market-wide upper bound or a sustained daily rate.",
+      "Provider first-seen jobs can be old postings newly discovered by that provider. Source posting dates can be refreshed externally.",
+      "New company means a normalized name absent from local stored Job Pool history; user-specific application history was not queried.",
+      "Offset pagination is not a frozen snapshot; provider totals can change while paging."
+    ],
+    "databaseWrites": false,
+    "important": "The two windows overlap and must not be added. Provider first-seen and source posting dates describe different events. These are personal/non-commercial research calls, not a newly integrated feed.",
+    "sourceDocumentation": "https://freehire.me/docs/api"
+  },
+  "implementationUpdate": {
+    "dateLocal": "2026-10-24",
+    "status": "Implemented and activated in the local Windows development deployment",
+    "migration": "20261024010000_company_discovery",
+    "features": [
+      "Daily Himalayas imports in an independent lane",
+      "Persistent company first-seen history, backfilled from existing job creation times",
+      "One job per company with expandable matching roles",
+      "Actor-scoped application and profile-mark company exclusions",
+      "Verified employer-board discovery from existing imported ATS URLs",
+      "Rolling 24-hour new-company filter and measured count"
+    ],
+    "initialVerification": {
+      "existingJobRecordsPreserved": 23039,
+      "existingApplicationsPreserved": 38,
+      "appliedMarksPreserved": 3,
+      "viewedMarksPreserved": 4,
+      "backfilledCompanyRecords": 4862,
+      "filteredHimalayasFeeds": 21,
+      "initialAdditionalEmployerBoardsVerified": 14
+    },
+    "dailyTarget": 1000,
+    "targetGuarantee": false,
+    "ubuntuDeployment": "Requires pulling/deploying this code and applying the additive migration on Ubuntu; only the local database was migrated."
+  }
+}

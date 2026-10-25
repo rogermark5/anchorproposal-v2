@@ -12,13 +12,33 @@ export const FREEHIRE_SOURCES = [
   'keka', 'loxo', 'recruiterflow', 'talentlyft', 'teamtailor', 'workstream',
   'zohorecruit', 'peopleforce', 'careerspage', 'ismartrecruit',
   'amazon', 'apple', 'ibm', 'meta', 'bairesdev', 'epam', 'lumenalta', 'dassault', 'uber',
+  'trinethire', 'taleobe', 'factorial', 'neogov',
+  // Remaining ATS platforms and company career pages in the public source directory,
+  // verified 2026-10-24. Append only: persisted cursors contain these array indexes.
+  'trudvsem', 'careerplug', 'isolvedhire', 'personio', 'gupy', 'feishujobs', 'applitrack',
+  'pandape', 'jobappnetwork', 'betterteam', 'tenstreet', 'gethired', 'applicantstack', 'hireclick',
+  'hcshiring', 'arbeitsagentur', 'solides', 'harri', 'pageup', 'softgarden', 'inhire',
+  'hrmos', 'traffit', 'herp', 'earcu', 'pandapelatam', 'potok', 'higherme',
+  'idealtraits', 'paradox', 'erecruiter', 'eploy', 'quickin', 'hrmanager', 'humanbit',
+  'appone', 'peoplesoft', 'senior', 'luxoft', 'beesite', 'flatchr', 'emply',
+  'huntflow', 'cleverstaff', 'wpyoast', 'hiringroom', 'friendwork', 'mokahr', 'opencats',
+  'polymer', 'dover', 'workablemarketplace', 'scalis', 'geekhunter', 'compleo', 'bullhorn',
+  'jobspage', 'vention', 'hurma', 'northstone', 'recrutei', 'pyjamahr', 'rapyd',
+  'speedrun', 'likeit', 'odoo', 'clinch', 'enlizt', 'spark', 'talentadore',
+  'talenthr', 'google', 'alibaba', 'sber', 'alfabank', 'mts', 'emagine',
+  'meituan', 'yandex', 'x5', 'tbank', 'vk', 'megafon', 'rostelecom',
+  'micro1', 'lamoda', 'orion', 'avito', 'dataart', 'kaspersky', 'rwb',
+  'uzum', 'halyk', 'garena', 'staffy', 'yandexcrowd', 'kaspi', 'magnit',
+  'kontur', 'tochka', 'lesta', 'selectel', 'aviasales', 'ozon', 'dodo',
+  'ptsecurity', 'domclick', '2gis', 'onstrider', '10ml', 'tencent', 'telegramcareers',
+  'alignerr', 'jettycloud', 'kuper', 'mtslink',
 ] as const;
 const CATEGORIES = 'software_engineering,backend,frontend,fullstack,mobile,devops,sre,network_engineering,data_engineering,data_science,data_analytics,ml_ai,ai_engineering,qa,security,architecture,embedded,blockchain,management,solutions_engineering';
 export const FREEHIRE_MAX_PAGES = 500;
 
 export function freehireCursor(cursor: string | null, board = ''): { index: number; offset: number } {
   const selected = board ? FREEHIRE_SOURCES.indexOf(board as typeof FREEHIRE_SOURCES[number]) : 0;
-  const match = /^(\d{1,2}):(\d{1,4})$/.exec(cursor || `${selected}:0`);
+  const match = /^(\d{1,3}):(\d{1,4})$/.exec(cursor || `${selected}:0`);
   if (!match) throw new Error('Invalid Freehire page cursor.');
   const index = Number(match[1]), offset = Number(match[2]);
   if (selected < 0 || index >= FREEHIRE_SOURCES.length || offset > 9900 || offset % 100 !== 0 || (board && index !== selected)) throw new Error('Invalid Freehire page cursor.');
@@ -29,7 +49,7 @@ export function freehireUrl(cursor: string | null, board = '', worldwide = false
   const { index, offset } = freehireCursor(cursor, board);
   const url = new URL('https://freehire.me/api/v1/agent/jobs/search');
   url.search = new URLSearchParams({ source: FREEHIRE_SOURCES[index], ...(worldwide ? { regions: 'global' } : { countries: 'US,GB,IE' }), work_mode: 'remote',
-    category: CATEGORIES, description_format: 'text', limit: '100', offset: String(offset), sort: 'created_at', order: 'desc' }).toString();
+    category: CATEGORIES, posted_within_days: '2', description_format: 'text', limit: '100', offset: String(offset), sort: 'posted_at', order: 'desc' }).toString();
   return url;
 }
 

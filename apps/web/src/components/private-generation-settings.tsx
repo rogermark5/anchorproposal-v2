@@ -6,6 +6,7 @@ import { desktopBridge } from '@/lib/desktop-bridge';
 import { Check, FileText, LockKeyhole, Plus, Pencil, Users, UserRound, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { api, type DocumentKind, type ExperienceTitleMode, type GenerationWorkflow, type PrivatePrompt } from '@/lib/api';
+import { MAX_ANSWER_PROMPT_LENGTH, answerPromptLengthError } from '@anchorproposal/shared';
 
 type Way = GenerationWorkflow['mode'];
 const ways = [
@@ -62,9 +63,24 @@ export function PrivateGenerationSettings() {
   const [error, setError] = useState('');
   const [answerText, setAnswerText] = useState('');
   const [savingAnswer, setSavingAnswer] = useState(false);
+  const [answerSaveError, setAnswerSaveError] = useState('');
   const [showJobTitle, setShowJobTitle] = useState(true);
   const [savingDisplay, setSavingDisplay] = useState(false);
   const loaded = useRef(false);
+  const answerLengthError = answerPromptLengthError(answerText);
+
+  const saveAnswerInstructions = async () => {
+    if (savingAnswer || answerLengthError) return;
+    setSavingAnswer(true); setAnswerSaveError('');
+    try {
+      const saved = await api.updateAnswerPrompt(answerText);
+      setAnswerText(saved.prompt);
+      toast.success('Your answer instructions were saved');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Save failed';
+      setAnswerSaveError(message); toast.error(message);
+    } finally { setSavingAnswer(false); }
+  };
 
   const applyWorkflow = (data: GenerationWorkflow) => {
     setWorkflow(data); setDefaultText(instructionsOnly(data.defaultPrompt.content));
@@ -131,7 +147,14 @@ export function PrivateGenerationSettings() {
       <p className="text-xs text-slate-500">Applies to the header in your previews, downloads and public resume links. Job titles in your work history stay visible. Skills come from the generated JSON response and can be edited in the document preview.</p>
       <button disabled={savingDisplay || showJobTitle === (workflow.documentDisplay?.showJobTitle !== false)} onClick={async () => { setSavingDisplay(true); try { const display = await api.updateDocumentDisplay({ showJobTitle }); setWorkflow(previous => previous ? { ...previous, documentDisplay: display } : previous); toast.success('Resume appearance saved'); } catch (error) { toast.error(error instanceof Error ? error.message : 'Save failed'); } finally { setSavingDisplay(false); } }} className="rounded-lg bg-primary px-4 py-2 text-sm text-white disabled:opacity-50">{savingDisplay ? 'Saving…' : 'Save appearance'}</button>
     </section>}
-    {workflow && <details className="rounded-xl border border-slate-200 bg-white p-5"><summary className="cursor-pointer text-sm font-medium text-slate-600">Optional: my application-answer instructions</summary><p className="mt-3 text-xs text-slate-500">Used when you ask application questions after generating a resume. These instructions are private to your account.</p><textarea aria-label="My application-answer instructions" value={answerText} onChange={event => setAnswerText(event.target.value)} rows={5} disabled={savingAnswer} className="mt-3 block w-full rounded-lg border p-3 text-sm" /><button disabled={savingAnswer} onClick={async () => { setSavingAnswer(true); try { await api.updateAnswerPrompt(answerText); toast.success('Your answer instructions were saved'); } catch (error) { toast.error(error instanceof Error ? error.message : 'Save failed'); } finally { setSavingAnswer(false); } }} className="mt-3 rounded-lg border px-4 py-2 text-sm">{savingAnswer ? 'Saving…' : 'Save my answer instructions'}</button></details>}
+    {workflow && <details className="rounded-xl border border-slate-200 bg-white p-5">
+      <summary className="cursor-pointer text-sm font-medium text-slate-600">Optional: my application-answer instructions</summary>
+      <p id="answer-instructions-help" className="mt-3 text-xs text-slate-500">Used when you ask application questions after generating a resume. These instructions are private to your account.</p>
+      <textarea aria-label="My application-answer instructions" aria-describedby="answer-instructions-help answer-instructions-count answer-instructions-error" aria-invalid={!!answerLengthError} value={answerText} onChange={event => { setAnswerText(event.target.value); setAnswerSaveError(''); }} rows={5} disabled={savingAnswer} className="mt-3 block w-full rounded-lg border p-3 text-sm" />
+      <p id="answer-instructions-count" className={'mt-2 text-xs ' + (answerLengthError ? 'text-red-700' : 'text-slate-500')}>{answerText.trim().length.toLocaleString('en-US')} / {MAX_ANSWER_PROMPT_LENGTH.toLocaleString('en-US')} characters</p>
+      <p id="answer-instructions-error" role={answerLengthError || answerSaveError ? 'alert' : undefined} className="mt-1 text-sm text-red-700">{answerLengthError || answerSaveError}</p>
+      <button disabled={savingAnswer || !!answerLengthError} onClick={() => void saveAnswerInstructions()} className="mt-3 rounded-lg border px-4 py-2 text-sm disabled:opacity-50">{savingAnswer ? 'Saving…' : 'Save my answer instructions'}</button>
+    </details>}
     {editor && workflow && <PromptEditor editor={editor} rules={workflow.jsonRules[editor.kind]} onClose={() => setEditor(null)} onSave={async (name, content, experienceTitleMode) => {
       const prompt = editor.prompt ? await api.updateLibraryPrompt(editor.prompt.id, { name, content, experienceTitleMode, documentKind: editor.kind }) : await api.createLibraryPrompt({ name, content, experienceTitleMode, documentKind: editor.kind });
       setWorkflow(previous => previous ? { ...previous, prompts: editor.prompt ? previous.prompts.map(existing => existing.id === prompt.id ? prompt : existing) : [...previous.prompts, prompt] } : previous);
