@@ -17,8 +17,11 @@ export class ApplicationsController {
     @Query('q') q?: string,
     @Query('scope') scope?: 'mine' | 'team',
     @Query('limit') limit?: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+    @Query('timeZone') timeZone?: string,
   ) {
-    return this.applicationsService.findAll(req.user, { status, profileId, q, scope, limit: limit ? Number(limit) : undefined });
+    return this.applicationsService.findAll(req.user, { status, profileId, q, scope, limit: limit ? Number(limit) : undefined, from, to, timeZone });
   }
 
   @Get('page')

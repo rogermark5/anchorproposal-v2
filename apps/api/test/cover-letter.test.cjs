@@ -88,7 +88,7 @@ test('cover exports reject absent or old defaults before rendering or deleting e
     const generation = { id: 'g1', applicationId: 'a1', version: 1, status: 'COMPLETED', structuredOutputJson: output, profileSnapshotJson: { firstName: 'Alex', lastName: 'Example' }, application: { bidderId: 'u1', profileId: 'p1', jobTitle: 'Backend Engineer', company: 'Hiring Co' }, templateVersion: { configJson: {} }, files: [{ id: 'old', kind: 'COVER_LETTER', type: 'PDF' }] };
     const prisma = { user: { findUnique: async () => ({ canDownloadDocuments: true }) }, resumeGeneration: { findUnique: async () => generation }, generationFile: { delete: async () => { deleted++; }, create: async ({ data }) => ({ id: 'new', ...data }) } };
     const renderer = { renderCoverLetter: async (_a, _g, data) => { rendered = data; return [{ type: 'PDF', kind: 'COVER_LETTER', filename: 'cover.pdf', storagePath: 'cover.pdf' }]; }, renderAll: async () => [{ type: 'PDF', kind: 'RESUME', filename: 'resume.pdf', storagePath: 'resume.pdf' }] };
-    const s = new GenerationsService(prisma, { checkAccess: async () => {} }, {}, {}, {}, renderer, {}, {});
+    const s = new GenerationsService(prisma, { checkAccess: async () => {} }, {}, { getTimeZone: async () => ({timeZone:'UTC'}) }, {}, renderer, {}, {});
     const user = { id: 'u1', role: 'BIDDER' };
     if (!usableCoverLetter(cover)) {
       await assert.rejects(s.exportFile('g1', user, 'COVER_LETTER', 'PDF'), /no tailored cover letter/);

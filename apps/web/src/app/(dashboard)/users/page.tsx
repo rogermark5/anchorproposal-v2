@@ -311,7 +311,7 @@ export default function UsersPage() {
 
   const handleAssign = async (profileId: string, target?: ManagedUser | null) => {
     const user = target ?? detailUser;
-    if (!user || user.role !== 'BIDDER') return;
+    if (!user || !canManage(user)) return;
     const current = user.profileAssignments.map((a) => ({
       profileId: a.profileId,
       isDefault: a.isDefault,
@@ -329,7 +329,7 @@ export default function UsersPage() {
 
   const handleUnassign = async (profileId: string, target?: ManagedUser | null) => {
     const user = target ?? detailUser;
-    if (!user || user.role !== 'BIDDER') return;
+    if (!user || !canManage(user)) return;
     const assignments = user.profileAssignments
       .filter((a) => a.profileId !== profileId)
       .map((a, i) => ({
@@ -639,7 +639,7 @@ export default function UsersPage() {
                           >
                             <PauseCircle className="w-4 h-4" />
                           </button>
-                          {isAdmin && u.role === 'BIDDER' && (
+                          {((isMaster && (u.role === 'ADMIN' || u.role === 'BIDDER')) || (isAdmin && u.role === 'BIDDER')) && (
                             <>
                               <button
                                 type="button"
@@ -650,7 +650,7 @@ export default function UsersPage() {
                               >
                                 <UserRound className="w-4 h-4" />
                               </button>
-                              <button
+                              {u.role === 'BIDDER' && <button
                                 type="button"
                                 title="Assign templates"
                                 disabled={!manageable}
@@ -658,7 +658,7 @@ export default function UsersPage() {
                                 className="p-2 rounded-lg text-slate-500 hover:text-[var(--primary)] hover:bg-slate-100 disabled:opacity-30 disabled:pointer-events-none"
                               >
                                 <LayoutTemplate className="w-4 h-4" />
-                              </button>
+                              </button>}
                             </>
                           )}
                           <button
@@ -1063,7 +1063,7 @@ export default function UsersPage() {
       )}
 
       {/* Assign profiles */}
-      {isAdmin && profileUser && (
+      {(isMaster || isAdmin) && profileUser && (
         <div
           className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4"
           onClick={() => setProfileUser(null)}
@@ -1126,6 +1126,7 @@ export default function UsersPage() {
                 ))}
               </div>
             )}
+            {profileUser.role === 'ADMIN' && <p className="text-xs text-slate-500">Admins can use profiles they create. Assign additional profiles here to give this admin access, or remove an assignment to revoke that additional access.</p>}
             <div>
               <label className="block text-xs font-medium text-slate-500 mb-1.5">Add profile</label>
               <select

@@ -7,6 +7,7 @@ import { DesktopAuthContext } from './auth-context';
 import { NavigationProvider } from './navigation';
 import { api, type User } from '../../web/src/lib/api';
 import './desktop.css';
+import { TimeZoneProvider } from '../../web/src/components/time-zone-settings';
 const Workspace = lazy(() => import('./workspace'));
 const QuickApplication = lazy(() => import('./quick-application'));
 const quick = new URLSearchParams(location.search).get('view') === 'quick';
@@ -47,12 +48,12 @@ function App() {
   const logout = useCallback(async () => { await window.anchor.logout(); setUser(null); }, []);
   const context = useMemo(() => ({ user, loading, login: async (email: string, password: string) => { await window.anchor.auth('login', { email, password }); await restore(); }, logout, isMaster: user?.role === 'MASTER', isAdmin: user?.role === 'MASTER' || user?.role === 'ADMIN', canBid: user?.role === 'ADMIN' || user?.role === 'BIDDER' }), [user, loading, logout, restore]);
   const preferences = <Preferences settings={settings} user={user} version={version} busy={busy} onError={setError} onSignout={() => void logout()} onSave={value => { setBusy(true); void window.anchor.settings(value).then(setSettings).then(() => toast.success('Desktop preferences saved')).catch(e => setError(e.message)).finally(() => setBusy(false)); }}/>;
-  return <DesktopAuthContext.Provider value={context}><NavigationProvider><div className={`native-shell ${quick ? 'quick-shell' : ''}`}>
+  return <DesktopAuthContext.Provider value={context}><TimeZoneProvider><NavigationProvider><div className={`native-shell ${quick ? 'quick-shell' : ''}`}>
     <header className="native-titlebar"><div><Anchor size={17}/><span>AnchorProposal</span><small>{quick ? 'QUICK APPLICATION' : 'DESKTOP'}</small></div><div className="native-window-buttons">{quick && <button aria-label="Open workspace" title="Open full workspace" onClick={() => void window.anchor.window('workspace')}><ArrowUpRight size={16}/></button>}<button aria-label="Minimize" onClick={() => void window.anchor.window('minimize')}><Minus size={15}/></button>{!quick && <button aria-label="Maximize or restore" onClick={() => void window.anchor.window('maximize')}><Square size={13}/></button>}<button aria-label={quick ? "Close application form" : "Close to tray"} className="window-close" onClick={() => void window.anchor.window('close')}><X size={17}/></button></div></header>
     {error && <div role="alert" className="native-error">{error}<button aria-label="Dismiss error" onClick={() => setError('')}><X size={15}/></button></div>}
     {!ready ? <div className="native-starting"><Anchor size={32}/><p>Opening AnchorProposal…</p></div> : loading && !user ? <div className="native-starting"><LoaderCircle className="native-spin"/><h1>Welcome back</h1><p>Connecting to your server…</p><button className="native-secondary" onClick={() => { setLoading(false); }}>Back to sign in</button></div> : !user ? <div className="native-auth"><Auth onLogin={value => { if (value?.id) setUser(value); else void restore(); }} onError={setError}/></div> : <Suspense fallback={<div className="desktop-loading">Opening your workspace…</div>}>{quick ? <QuickApplication/> : <Workspace preferences={preferences} hotkey={settings.hotkey}/>}</Suspense>}
     <Toaster theme="dark" position="bottom-right" richColors closeButton/>
-  </div></NavigationProvider></DesktopAuthContext.Provider>;
+  </div></NavigationProvider></TimeZoneProvider></DesktopAuthContext.Provider>;
 }
 createRoot(document.getElementById('root')!).render(<App/>);
 requestAnimationFrame(() => void window.anchor.ready());

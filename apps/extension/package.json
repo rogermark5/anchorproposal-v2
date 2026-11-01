@@ -1,6 +1,6 @@
 {
   "name": "@anchorproposal/extension",
-  "version": "0.2.5",
+  "version": "0.2.7",
   "private": true,
   "description": "AnchorProposal per-tab resume generation, previews and automatic document downloads",
   "scripts": {

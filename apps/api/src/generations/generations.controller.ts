@@ -88,6 +88,11 @@ export class GenerationsController {
     return this.generationsService.findOne(id, req.user);
   }
 
+  @Post('generations/:id/cancel')
+  cancel(@Param('id') id: string, @Req() req: { user: AuthUser }) {
+    return this.generationsService.cancel(id, req.user);
+  }
+
   @Get('generations/:id/preview')
   previewHtml(@Param('id') id: string, @Req() req: { user: AuthUser }) {
     return this.generationsService.previewHtml(id, req.user);
@@ -130,6 +135,16 @@ export class GenerationsController {
     @Req() req: { user: AuthUser },
   ) {
     return this.answersService.ask(id, req.user, question);
+  }
+
+  @Post('generations/:id/answers/requests')
+  submitAnswer(@Param('id') id: string, @Body() body: { question: string; idempotencyKey: string }, @Req() req: { user: AuthUser }) {
+    return this.answersService.submit(id, req.user, body?.question, body?.idempotencyKey);
+  }
+
+  @Get('generations/:id/answers/requests/:requestId')
+  answerStatus(@Param('id') id: string, @Param('requestId') requestId: string, @Req() req: { user: AuthUser }) {
+    return this.answersService.requestStatus(id, requestId, req.user);
   }
 
   @Post('generations/:id/export')

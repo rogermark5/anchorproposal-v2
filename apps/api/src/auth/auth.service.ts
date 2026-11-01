@@ -329,8 +329,10 @@ export class AuthService {
       const rotated = await this.prisma.user.updateMany({ where: { id: user.id, refreshToken }, data: { refreshToken: tokens.refreshToken } });
       if (rotated.count !== 1) throw new UnauthorizedException('Invalid refresh token');
       return tokens;
-    } catch {
-      throw new UnauthorizedException('Invalid refresh token');
+    } catch (error) {
+      if (error instanceof UnauthorizedException || ['JsonWebTokenError', 'TokenExpiredError', 'NotBeforeError'].includes((error as Error)?.name)) throw new UnauthorizedException('Invalid refresh token');
+      // A database/network outage must not invalidate an otherwise valid session.
+      throw error;
     }
   }
 

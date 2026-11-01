@@ -31,7 +31,8 @@ test('company matching ignores case and every whitespace character, preserves pu
   assert.deepEqual(matches.constructor,[{...rows[2],profileName:'Profile not recorded'}]);
   assert.equal(matches['acme-inc.'],undefined);
   assert.deepEqual(query.where,{bidderId:'me',profile:{assignments:{some:{userId:'me',activeTo:null}}}});
-  for (const role of ['MASTER','ADMIN']) { await service.matchingCompanies({id:'me',role},['acme']);assert.deepEqual(query.where,{bidderId:'me'}); }
+  await service.matchingCompanies({id:'me',role:'MASTER'},['acme']);assert.deepEqual(query.where,{bidderId:'me',profile:{}});
+  await service.matchingCompanies({id:'me',role:'ADMIN'},['acme']);assert.deepEqual(query.where,{bidderId:'me',profile:{OR:[{ownerId:'me'},{assignments:{some:{userId:'me',activeTo:null,grantedByMaster:true}}}]}});
 });
 
 test('draft validation uses existing rules and permissions without creating records or returning other bidders applications', async () => {

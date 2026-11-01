@@ -17,6 +17,7 @@ import {
   isOwnedBidder,
 } from '../common/utils/roles.util';
 import { SettingsService } from '../settings/settings.service';
+import { profileAccessWhere } from '../common/utils/profile-access';
 import { publicUser } from './public-user';
 
 @Injectable()
@@ -64,7 +65,7 @@ export class UsersService {
       orderBy: [{ role: 'asc' }, { createdAt: 'desc' }],
     });
 
-    return users.map(user => ({ ...publicUser(user), promptAssignments: [], assignedPromptContent: null, assignedPromptName: null }));
+    return users.map(user => ({ ...publicUser({ ...user, profileAssignments: user.profileAssignments.filter(a => !a.activeTo && (user.role !== UserRole.ADMIN || a.grantedByMaster)) }), promptAssignments: [], assignedPromptContent: null, assignedPromptName: null }));
   }
 
   async listAdmins(actor: AuthUser) {
@@ -395,8 +396,8 @@ export class UsersService {
 
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) throw new NotFoundException('User not found');
-    if (user.role !== UserRole.BIDDER) {
-      throw new ForbiddenException('Profiles can only be assigned to bidders');
+    if (user.role !== UserRole.BIDDER && !(isMaster(actor.role) && user.role === UserRole.ADMIN)) {
+      throw new ForbiddenException('Only Master can assign profiles to admins');
     }
     if (isAdmin(actor.role) && !isOwnedBidder(actor.id, user)) {
       throw new ForbiddenException('You can only assign profiles to your own bidders');
@@ -404,16 +405,16 @@ export class UsersService {
 
     this.validateAssignments(assignments, 'profileId');
     const profiles = await this.prisma.profile.count({
-      where: { id: { in: assignments.map((a) => a.profileId) }, archivedAt: null },
+      where: { id: { in: assignments.map((a) => a.profileId) }, archivedAt: null, ...profileAccessWhere(actor) },
     });
-    if (profiles !== assignments.length) throw new BadRequestException('Only existing, active profiles can be assigned');
+    if (profiles !== assignments.length) throw new BadRequestException('Only active profiles you can access can be assigned');
     const defaultIndex = Math.max(0, assignments.findIndex((a) => a.isDefault));
     await this.prisma.user.update({
       where: { id: userId },
       data: {
         profileAssignments: {
           deleteMany: {},
-          create: assignments.map((a, i) => ({ profileId: a.profileId, isDefault: i === defaultIndex })),
+          create: assignments.map((a, i) => ({ profileId: a.profileId, isDefault: i === defaultIndex, grantedByMaster: isMaster(actor.role) })),
         },
       },
     });

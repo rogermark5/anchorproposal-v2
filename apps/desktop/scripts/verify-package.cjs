@@ -29,7 +29,7 @@ const sha256 = async file => {
   assert.equal(packaged.apiServer, require('../main/security.cjs').DESKTOP_API_SERVER);
   const staged = JSON.parse(fs.readFileSync(path.join(root, 'build-app/package.json'), 'utf8'));
   assert.equal(packaged.apiServer, staged.apiServer);
-  for (const file of ['main/index.cjs', 'main/security.cjs', 'main/preload.cjs', 'main/session.cjs', 'main/generation.cjs', 'dist/styles.css', 'dist/app.css', 'dist/index.html']) {
+  for (const file of ['main/index.cjs', 'main/security.cjs', 'main/preload.cjs', 'main/session.cjs', 'main/http.cjs', 'main/generation.cjs', 'dist/styles.css', 'dist/app.css', 'dist/index.html']) {
     assert.equal(createHash('sha256').update(packedFile(file)).digest('hex'),
       await sha256(path.join(root, 'build-app', file)), `Stale packaged file: ${file}`);
   }
@@ -38,7 +38,7 @@ const sha256 = async file => {
   assert.ok(security.includes('draft-preview|edits') && security.includes('document-display'));
   const renderer = entries.filter(entry => entry.startsWith('/dist/') && entry.endsWith('.js'))
     .map(entry => packedFile(entry.slice(1)).toString()).join('\n');
-  for (const feature of ['Preview and edit documents', 'Save and rebuild', 'This application will be saved without a job link.', 'Remote Software Jobs', 'Filter by country', 'United Kingdom', 'Ireland', 'total source target', 'country source target', 'sources with eligible jobs', 'Filter by site', 'Filter by added time', 'Job company:', 'Checking job description', 'Close application form', 'New = latest import additions', 'Job status colors', 'Status colors appear on badges only.', 'Applied with profile']) {
+  for (const feature of ['Preview and edit documents', 'Save and rebuild', 'This application will be saved without a job link.', 'Remote Software Jobs', 'Filter by country', 'United Kingdom', 'Ireland', 'total source target', 'country source target', 'sources with eligible jobs', 'Filter by site', 'Filter by source posting time', 'Job company:', 'Checking job description', 'Close application form', 'New = latest import additions', 'Job status colors', 'Status colors appear on badges only.', 'Applied with profile', 'Display time zone', 'Application creation date range', 'Exclude companies applied with profiles', 'Cancel generation']) {
     assert.ok(renderer.includes(feature), `Current web workflow missing from package: ${feature}`);
   }
   const portable = JSON.parse(fs.readFileSync(path.join(root, 'release/build/portable-build.json'), 'utf8'));

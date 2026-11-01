@@ -6,6 +6,7 @@ import { GenerationsController } from './generations.controller';
 import { PublicResumeController } from './public-resume.controller';
 import { GenerationProcessor } from './generation.processor';
 import { AnswersService } from './answers.service';
+import { AnswerProcessor } from './answer.processor';
 import { ProfilesModule } from '../profiles/profiles.module';
 import { RulesModule } from '../rules/rules.module';
 import { SettingsModule } from '../settings/settings.module';
@@ -24,6 +25,7 @@ import { StorageService } from '../storage/storage.service';
       inject: [ConfigService],
     }),
     BullModule.registerQueue({ name: 'resume-generation' }),
+    BullModule.registerQueue({ name: 'application-answers' }),
     ProfilesModule,
     RulesModule,
     SettingsModule,
@@ -33,6 +35,7 @@ import { StorageService } from '../storage/storage.service';
   providers: [
     GenerationsService,
     AnswersService,
+    AnswerProcessor,
     GenerationProcessor,
     DeepseekService,
     DocumentRendererService,

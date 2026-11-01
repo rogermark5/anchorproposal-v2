@@ -1,6 +1,7 @@
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { APPLICATION_STATUS_LABELS, type ApplicationStatus } from '@anchorproposal/shared';
+import { formatZonedDate } from './time-zone';
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -40,7 +41,7 @@ export function formatStatus(status: string) {
 }
 
 export function formatDate(date: string) {
-  return new Date(date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  return formatZonedDate(date);
 }
 
 /** Truncate for table cells; full text should stay in a title/tooltip. */

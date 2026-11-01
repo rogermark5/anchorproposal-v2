@@ -18,12 +18,12 @@ export class ProfilesController {
 
   @Get('assigned')
   getAssigned(@Req() req: { user: AuthUser }) {
-    return this.profilesService.getAssignedProfiles(req.user.id);
+    return this.profilesService.getAssignedProfiles(req.user);
   }
 
   @Get('default')
   getDefault(@Req() req: { user: AuthUser }) {
-    return this.profilesService.getDefaultProfile(req.user.id);
+    return this.profilesService.getDefaultProfile(req.user);
   }
 
   @Patch(':id/set-default')
@@ -80,28 +80,28 @@ export class ProfilesController {
   @Post()
   @UseGuards(RolesGuard)
   @Roles(UserRole.ADMIN)
-  create(@Body() body: Record<string, unknown>) {
-    return this.profilesService.create(body);
+  create(@Body() body: Record<string, unknown>, @Req() req: { user: AuthUser }) {
+    return this.profilesService.create(body, req.user);
   }
 
   @Put(':id')
   @UseGuards(RolesGuard)
   @Roles(UserRole.ADMIN)
-  update(@Param('id') id: string, @Body() body: Record<string, unknown>) {
-    return this.profilesService.update(id, body);
+  update(@Param('id') id: string, @Body() body: Record<string, unknown>, @Req() req: { user: AuthUser }) {
+    return this.profilesService.update(id, body, req.user);
   }
 
   @Patch(':id/archive')
   @UseGuards(RolesGuard)
   @Roles(UserRole.ADMIN)
-  archive(@Param('id') id: string) {
-    return this.profilesService.archive(id);
+  archive(@Param('id') id: string, @Req() req: { user: AuthUser }) {
+    return this.profilesService.archive(id, req.user);
   }
 
   @Post(':id/clone')
   @UseGuards(RolesGuard)
   @Roles(UserRole.ADMIN)
-  clone(@Param('id') id: string) {
-    return this.profilesService.clone(id);
+  clone(@Param('id') id: string, @Req() req: { user: AuthUser }) {
+    return this.profilesService.clone(id, req.user);
   }
 }

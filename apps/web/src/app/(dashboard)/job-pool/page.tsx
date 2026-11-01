@@ -1,4 +1,5 @@
 'use client';
+import { useTimeZone } from '@/components/time-zone-settings';
 
 import { FormEvent, ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 import { Briefcase, Search, RefreshCw, Plus, ExternalLink, Settings2, X, EyeOff } from 'lucide-react';
@@ -9,6 +10,8 @@ import { useAuth } from '@/lib/auth-context';
 import { jobTimeAgo } from '@/lib/job-time';
 import { JobSiteLogo } from '@/components/job-site-logo';
 import { desktopBridge } from '@/lib/desktop-bridge';
+import { formatZonedDateTime } from '@/lib/time-zone';
+import { ProfileDuplicationFilter } from '@/components/profile-duplication-filter';
 
 const field = 'w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30';
 const button = 'inline-flex items-center justify-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50';
@@ -24,7 +27,7 @@ const feedCredits = [
   { name: 'RemoteJobs.org', url: 'https://remotejobs.org' }, { name: 'Jobicy', url: 'https://jobicy.com' }, { name: 'Remote OK', url: 'https://remoteok.com' },
 ];
 const boardExamples: Record<string, string> = { greenhouse:'boards.greenhouse.io/airbnb → airbnb', lever:'jobs.lever.co/spotify → spotify', ashby:'jobs.ashbyhq.com/notion → notion', smartrecruiters:'careers.smartrecruiters.com/ServiceNow → ServiceNow', workable:'apply.workable.com/example → example', recruitee:'example.recruitee.com → example', breezy:'example.breezy.hr → example', pinpoint:'example.pinpointhq.com → example', personio:'example.jobs.personio.de → example', bamboohr:'example.bamboohr.com → example', teamtailor:'example.teamtailor.com → example.teamtailor.com (include the host)', paylocity:'recruiting.paylocity.com/recruiting/jobs/All/company-uuid → company-uuid' };
-const when = (date: string | null) => date ? new Date(date).toLocaleString() : 'Never';
+const when = (date: string | null) => date ? formatZonedDateTime(date) : 'Never';
 const message = (error: unknown) => error instanceof Error ? error.message : 'Something went wrong. Please try again.';
 const jobStates = {
   New: { badge: 'bg-sky-100 text-sky-900' },
@@ -64,7 +67,7 @@ type Profile = { id: string; firstName: string; lastName: string; isDefault?: bo
 const emptyJob = { title: '', company: '', location: 'United States', jobUrl: '', description: '', workArrangement: 'REMOTE' };
 
 function PostingTime({ value, updated, now }: { value: string | null; updated?: string | null; now: number }) {
-  return value && Number.isFinite(Date.parse(value)) ? <time dateTime={value} title={'Source posting time: ' + new Date(value).toLocaleString()}>Posted {jobTimeAgo(value, now)}</time> : updated && Number.isFinite(Date.parse(updated)) ? <time dateTime={updated} title="Source update time; original posting date unavailable">Updated {jobTimeAgo(updated, now)}</time> : <span>Posting time unavailable</span>;
+  return value && Number.isFinite(Date.parse(value)) ? <time dateTime={value} title={'Source posting time: ' + formatZonedDateTime(value)}>Posted {jobTimeAgo(value, now)}</time> : updated && Number.isFinite(Date.parse(updated)) ? <time dateTime={updated} title={'Source update time: ' + formatZonedDateTime(updated) + '; original posting date unavailable'}>Updated {jobTimeAgo(updated, now)}</time> : <span>Posting time unavailable</span>;
 }
 
 function TitleKeywordSettings({ keywords, save }: { keywords: string[]; save: (keywords: string[]) => Promise<void> }) {
@@ -97,6 +100,7 @@ function TitleKeywordSettings({ keywords, save }: { keywords: string[]; save: (k
 }
 
 export default function JobPoolPage() {
+  useTimeZone();
   const { isMaster, canBid, user } = useAuth(); const router = useRouter();
   const [listing, setListing] = useState<PoolListing | null>(null), [management, setManagement] = useState<PoolManagement | null>(null);
   const [updates, setUpdates] = useState<PoolUpdates | null>(null);
@@ -115,6 +119,8 @@ export default function JobPoolPage() {
   const [selected, setSelected] = useState<PoolJob | null>(null), [profiles, setProfiles] = useState<Profile[]>([]), [profileId, setProfileId] = useState('');
   const [markTarget, setMarkTarget] = useState<PoolJob | null>(null), [markProfiles, setMarkProfiles] = useState<Profile[]>([]);
   const [markProfileId, setMarkProfileId] = useState(''), [profilesLoading, setProfilesLoading] = useState(false);
+  const [excludeProfileIds, setExcludeProfileIds] = useState<string[]>([]), [filterProfiles, setFilterProfiles] = useState<Profile[]>([]);
+  useEffect(() => { let active = true; setExcludeProfileIds([]); setFilterProfiles([]); if (canBid) void api.getProfiles().then(data => { if (active) setFilterProfiles(data as Profile[]); }).catch(() => {}); return () => { active = false; }; }, [user?.id, canBid]);
   const requestId = useRef(0);
   const viewedMarks = useRef(new Map<string, { viewed: true; viewedAt: string }>());
   const viewFlights = useRef(new Map<string, Promise<void>>());
@@ -125,8 +131,8 @@ export default function JobPoolPage() {
   const markFlight = useRef(false);
   useEffect(() => { const timer = setTimeout(() => setQuery(q.trim()), 350); return () => clearTimeout(timer); }, [q]);
   useEffect(() => { const timer = setInterval(() => setNow(Date.now()), 30_000); return () => clearInterval(timer); }, []);
-  const filters = useCallback(() => ({ q: query, site, country, days, sort, status: 'all', companyStatus: 'true',
-    ...(isMaster && includeHidden ? { includeHidden: 'true' } : {}) }), [query, site, country, days, sort, isMaster, includeHidden, user?.id]);
+  const filters = useCallback(() => ({ q: query, site, country, days, sort, status: 'all', companyStatus: 'true', ...(excludeProfileIds.length ? { excludeProfileIds: excludeProfileIds.join(',') } : {}),
+    ...(isMaster && includeHidden ? { includeHidden: 'true' } : {}) }), [query, site, country, days, sort, isMaster, includeHidden, user?.id, excludeProfileIds.join(',')]);
   const load = useCallback(async (quiet = false) => {
     const request = ++requestId.current; moreFlight.current = null; setLoadingMore(false); setMoreError('');
     setUpdates(null);
@@ -342,6 +348,7 @@ export default function JobPoolPage() {
         <label className="min-w-0 text-xs font-medium text-slate-600">Posted<select aria-label="Filter by source posting time" title="Rolling hours based on the source posting time; jobs without a source date appear under All time" className={field + ' mt-1 block h-10 min-w-0'} value={days} onChange={event => setDays(event.target.value)}><option value="all">All time</option>{[1, 3, 7, 14, 30].map(day => <option key={day} value={day}>{day === 1 ? 'Last 24 hours' : 'Last ' + day + ' days (' + day * 24 + ' hours)'}</option>)}</select></label>
         <label className="min-w-0 text-xs font-medium text-slate-600">Sort by<select aria-label="Sort jobs" className={field + ' mt-1 block h-10 min-w-0'} value={sort} onChange={event => setSort(event.target.value)}><option value="imported">Recently imported</option><option value="newest">Newest posted</option></select></label>
         {isMaster && <label className="min-w-0 text-xs font-medium text-slate-600">Visibility<select aria-label="Filter by visibility" className={field + ' mt-1 block h-10 min-w-0'} value={includeHidden ? 'all' : 'visible'} onChange={event => setIncludeHidden(event.target.value === 'all')}><option value="visible">Visible jobs</option><option value="all">Include hidden</option></select></label>}
+        {canBid && <ProfileDuplicationFilter profiles={filterProfiles} selected={excludeProfileIds} onChange={setExcludeProfileIds} />}
       </div>
       <div className="flex flex-wrap items-center gap-4 border-b border-slate-200 px-4 py-2 text-xs text-slate-600">
         {listing?.newCompanyCount !== undefined && <span className="ml-auto"><strong className="text-primary-deep">{(updates?.newCompanyCount ?? listing.newCompanyCount).toLocaleString()}</strong> matching new companies in 24 hours · Goal: 1,000/day</span>}

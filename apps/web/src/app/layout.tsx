@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from 'next';
 import { Outfit, Cormorant_Garamond } from 'next/font/google';
 import { AuthProvider } from '@/lib/auth-context';
+import { TimeZoneProvider } from '@/components/time-zone-settings';
 import { Toaster } from 'sonner';
 import './globals.css';
 
@@ -32,7 +33,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="en" className={`${outfit.variable} ${cormorant.variable}`}>
       <body className="font-sans antialiased">
         <AuthProvider>
-          {children}
+          <TimeZoneProvider>{children}</TimeZoneProvider>
           <Toaster richColors position="top-right" closeButton />
         </AuthProvider>
       </body>

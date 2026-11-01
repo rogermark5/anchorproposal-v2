@@ -1,4 +1,8 @@
 'use client';
+import { DateRangePicker, type DateRange } from '@/components/date-range-picker';
+import { useTimeZone } from '@/components/time-zone-settings';
+import { todayInTimeZone, formatZonedDate } from '@/lib/time-zone';
+import { calendarDay } from '@anchorproposal/shared';
 
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
@@ -160,37 +164,8 @@ function formatGenerationStatus(status?: string): string {
   }
 }
 
-function dayKey(date: string | Date) {
-  const d = typeof date === 'string' ? new Date(date) : date;
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
-}
-
-function startOfDay(date: Date) {
-  const d = new Date(date);
-  d.setHours(0, 0, 0, 0);
-  return d;
-}
-
-function addDays(date: Date, n: number) {
-  const d = new Date(date);
-  d.setDate(d.getDate() + n);
-  return d;
-}
-
-function formatNavDate(date: Date) {
-  return date.toLocaleDateString('en-US', {
-    weekday: 'short',
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-  });
-}
-
 function formatShortDate(date: string) {
-  return new Date(date).toLocaleDateString('en-US');
+  return formatZonedDate(date, { month: 'numeric', day: 'numeric', year: 'numeric' });
 }
 
 async function downloadFile(fileId: string, filename: string) {
@@ -386,7 +361,8 @@ function ApplicationsPageInner() {
         ? 'all'
         : 'mine';
   const showBidderCol = isTrueAdmin && (appsTab === 'team' || appsTab === 'all');
-  const showDateNav = !isTrueAdmin || appsTab !== 'all';
+  const showDateNav = true;
+  const { timeZone } = useTimeZone();
   const colCount = BASE_COL_COUNT + (showBidderCol ? 1 : 0);
 
   const [apps, setApps] = useState<Application[]>([]);
@@ -396,8 +372,7 @@ function ApplicationsPageInner() {
   >([]);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
-  const [selectedDate, setSelectedDate] = useState<Date>(() => startOfDay(new Date()));
-  const [filterByDate, setFilterByDate] = useState(true);
+  const [dateRange, setDateRange] = useState<DateRange>(() => { const today = todayInTimeZone(); return { from: today, to: today }; });
   const [page, setPage] = useState(1);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
@@ -536,13 +511,13 @@ function ApplicationsPageInner() {
   );
 
   const buildListParams = useCallback(() => {
-    const params: Record<string, string> = {};
+    const params: Record<string, string> = { from: dateRange.from, to: dateRange.to, timeZone };
     if (statusFilter) params.status = statusFilter;
     if (isTrueAdmin && (appsTab === 'mine' || appsTab === 'team')) {
       params.scope = appsTab;
     }
     return params;
-  }, [statusFilter, isTrueAdmin, appsTab]);
+  }, [statusFilter, isTrueAdmin, appsTab, dateRange.from, dateRange.to, timeZone]);
 
   const listRequest = useRef(0);
   const load = useCallback(async () => {
@@ -581,16 +556,15 @@ function ApplicationsPageInner() {
   useEffect(() => {
     setPage(1);
     setSelectedIds(new Set());
-  }, [search, statusFilter, selectedDate, filterByDate, appsTab]);
+  }, [search, statusFilter, dateRange.from, dateRange.to, appsTab]);
 
-  const dateFilterActive = showDateNav && filterByDate;
+  const dateFilterActive = true;
 
   const filteredApps = useMemo(() => {
     const q = search.trim().toLowerCase();
     return apps.filter((app) => {
-      if (dateFilterActive && selectedDate) {
-        if (dayKey(app.createdAt) !== dayKey(selectedDate)) return false;
-      }
+      const day = calendarDay(app.createdAt, timeZone);
+      if (day < dateRange.from || day > dateRange.to) return false;
       if (!q) return true;
       const profileName = `${app.profile?.firstName || ''} ${app.profile?.lastName || ''}`.toLowerCase();
       const bidderName = `${app.bidder?.firstName || ''} ${app.bidder?.lastName || ''}`.toLowerCase();
@@ -603,7 +577,7 @@ function ApplicationsPageInner() {
         bidderName.includes(q)
       );
     });
-  }, [apps, search, selectedDate, dateFilterActive]);
+  }, [apps, search, dateRange.from, dateRange.to, timeZone]);
 
   const totalPages = Math.max(1, Math.ceil(filteredApps.length / PAGE_SIZE));
   const currentPage = Math.min(page, totalPages);
@@ -754,7 +728,7 @@ function ApplicationsPageInner() {
         };
         setPostCreate((prev) =>
           prev
-            ? { ...prev, phase: 'progress', generationStatus: started.status || 'QUEUED' }
+            ? { ...prev, phase: 'progress', generationId: started.id, generationStatus: started.status || 'QUEUED' }
             : prev,
         );
         const terminal = await pollGeneration(started.id);
@@ -765,7 +739,8 @@ function ApplicationsPageInner() {
           await load();
           toast.success('Resume and cover letter are ready to preview.');
         } else {
-          toast.error(terminal.errorMessage || 'Generation failed');
+          if (terminal.status === 'CANCELLED') toast.message('Generation cancelled. Your application is saved.');
+          else toast.error(terminal.errorMessage || 'Generation failed');
           setPostCreate(null);
           await load();
         }
@@ -1010,49 +985,11 @@ function ApplicationsPageInner() {
         </div>
       )}
 
-      <div className="bg-white border border-[var(--border)] rounded-xl shadow-sm overflow-hidden">
+      <div className="bg-white border border-[var(--border)] rounded-xl shadow-sm">
         {/* Date navigator — hidden on admin All Applications */}
         {showDateNav && (
           <div className="px-4 pt-4 pb-2 flex justify-center">
-            <div className="inline-flex items-center gap-2 rounded-full border border-[var(--border)] bg-slate-50 px-2 py-1">
-              <button
-                type="button"
-                title="Previous day"
-                onClick={() => {
-                  setFilterByDate(true);
-                  setSelectedDate((d) => addDays(d, -1));
-                }}
-                className="p-1.5 rounded-full text-slate-500 hover:bg-white hover:text-slate-800"
-              >
-                <ChevronLeft className="w-4 h-4" />
-              </button>
-              <button
-                type="button"
-                title={
-                  filterByDate
-                    ? 'Showing this day — click to show all dates'
-                    : 'Click to filter by this day'
-                }
-                onClick={() => setFilterByDate((v) => !v)}
-                className={cn(
-                  'min-w-[11rem] text-center text-sm font-medium px-2 py-1 rounded-full',
-                  filterByDate ? 'text-primary bg-white shadow-sm' : 'text-slate-700',
-                )}
-              >
-                {formatNavDate(selectedDate)}
-              </button>
-              <button
-                type="button"
-                title="Next day"
-                onClick={() => {
-                  setFilterByDate(true);
-                  setSelectedDate((d) => addDays(d, 1));
-                }}
-                className="p-1.5 rounded-full text-slate-500 hover:bg-white hover:text-slate-800"
-              >
-                <ChevronRight className="w-4 h-4" />
-              </button>
-            </div>
+            <DateRangePicker value={dateRange} onChange={setDateRange} />
           </div>
         )}
 
@@ -1694,6 +1631,13 @@ function ApplicationsPageInner() {
                     {formatGenerationStatus(postCreate.generationStatus)}
                   </p>
                   <p className="text-xs text-slate-400">This usually takes under a minute. Please wait…</p>
+                  <button type="button" disabled={!postCreate.generationId || postCreate.generationStatus === 'CANCELLING'} className="btn-secondary" onClick={async () => {
+                    const generationId = postCreate.generationId;
+                    if (!generationId) return;
+                    setPostCreate(prev => prev ? { ...prev, generationStatus: 'CANCELLING' } : prev);
+                    try { await api.cancelGeneration(generationId); }
+                    catch (error) { toast.error(error instanceof Error ? error.message : 'Could not cancel. Try again.'); setPostCreate(prev => prev ? { ...prev, generationStatus: 'GENERATING' } : prev); }
+                  }}>{postCreate.generationStatus === 'CANCELLING' ? 'Cancelling…' : 'Cancel generation'}</button>
                 </div>
               </>
             )}

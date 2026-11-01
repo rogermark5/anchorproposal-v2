@@ -23,7 +23,7 @@ function resolveCorsOrigins(): string[] | boolean {
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
   configureJsonBody(app);
-  app.enableCors({ origin: resolveCorsOrigins(), credentials: true, exposedHeaders: ['Content-Disposition'] });
+  app.enableCors({ origin: resolveCorsOrigins(), credentials: true, exposedHeaders: ['Content-Disposition', 'X-Request-Id', 'Retry-After'] });
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
   const port = process.env.API_PORT || 3001;
   await app.listen(port, '0.0.0.0');

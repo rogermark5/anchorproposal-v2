@@ -1,4 +1,5 @@
 'use client';
+import { useTimeZone } from '@/components/time-zone-settings';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
@@ -84,6 +85,7 @@ function ChartTooltip({
 }
 
 export default function DashboardPage() {
+  useTimeZone();
   const { canBid, isMaster, isAdmin } = useAuth();
   const [data, setData] = useState<MetricsData | null>(null);
   const [analyticsTab, setAnalyticsTab] = useState<'admin' | 'bidder'>('admin');

@@ -5,10 +5,12 @@ import { ArrowUp, Check, Copy, MessageSquare, Sparkles, X } from 'lucide-react';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { LoadingSpinner } from '@/components/loading-spinner';
+import { ApiRequestError, readableAnswer } from '@anchorproposal/shared';
 
 type AnswerItem = { question: string; answer: string };
 
 function AnswerMessage({ answer }: { answer: string }) {
+  answer = readableAnswer(answer);
   const [copied, setCopied] = useState(false);
   const [copyError, setCopyError] = useState(false);
   const copiedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -77,6 +79,8 @@ export function GetAnswersPanel({
   const composerRef = useRef<HTMLTextAreaElement>(null);
   const requestVersion = useRef(0);
   const sendingRef = useRef(false);
+  const submission = useRef<{ question: string; key: string } | null>(null);
+  const [pendingRequest, setPendingRequest] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [reload, setReload] = useState(0);
@@ -96,12 +100,14 @@ export function GetAnswersPanel({
     setItems([]);
     setDraft('');
     setPendingQuestion(null);
+    setPendingRequest(null);
     sendingRef.current = false;
     api.getGenerationAnswers(generationId)
       .then((data) => {
         if (version !== requestVersion.current) return;
         setPrimed(data.primed);
         setItems(data.items);
+        if (data.pending) { setPendingQuestion(data.pending.question); setPendingRequest(data.pending.id); }
       })
       .catch((err) => {
         if (version === requestVersion.current) setLoadError(err instanceof Error ? err.message : 'Could not load the conversation.');
@@ -111,6 +117,39 @@ export function GetAnswersPanel({
       });
     return () => { requestVersion.current++; };
   }, [generationId, reload]);
+
+  useEffect(() => {
+    if (!pendingRequest) return;
+    let active = true, timer: ReturnType<typeof setTimeout>;
+    const poll = async () => {
+      try {
+        const result = await api.getAnswerRequest(generationId, pendingRequest);
+        if (!active) return;
+        if (result.status === 'COMPLETED' && result.view) {
+          setPrimed(result.view.primed); setItems(result.view.items);
+          setPendingRequest(null); setPendingQuestion(null); setSendError(''); submission.current = null;
+          return;
+        }
+        if (result.status === 'FAILED') {
+          setDraft(pendingQuestion || ''); setPendingQuestion(null); setPendingRequest(null);
+          setSendError(result.errorMessage || 'Could not generate the answer.'); submission.current = null;
+          return;
+        }
+        setSendError('');
+      } catch (error) {
+        if (!active) return;
+        if (error instanceof ApiRequestError && [401, 403, 404].includes(error.status)) {
+          setDraft(pendingQuestion || ''); setPendingRequest(null); setPendingQuestion(null);
+          setSendError(error.message + ' Reopen this application after checking your login.');
+          return;
+        }
+        setSendError((error instanceof Error ? error.message : 'Connection interrupted.') + ' Reconnecting; your question is saved.');
+      }
+      if (active) timer = setTimeout(poll, 2000);
+    };
+    void poll();
+    return () => { active = false; clearTimeout(timer); };
+  }, [generationId, pendingRequest]);
 
   useEffect(() => {
     onBusyChange?.(busy);
@@ -154,24 +193,18 @@ export function GetAnswersPanel({
     setDraft('');
     setSendError('');
     try {
-      if (!primed) {
-        const view = await api.primeGenerationAnswers(generationId);
-        if (version !== requestVersion.current) return;
-        setPrimed(view.primed);
-        setItems(view.items);
-      }
-      const view = await api.askGenerationQuestion(generationId, question);
+      if (submission.current?.question !== question) submission.current = { question, key: crypto.randomUUID() };
+      const request = await api.submitAnswer(generationId, question, submission.current.key);
       if (version !== requestVersion.current) return;
-      setPrimed(view.primed);
-      setItems(view.items);
+      setPendingRequest(request.id);
     } catch (err) {
       if (version !== requestVersion.current) return;
       setDraft(question);
+      setPendingQuestion(null);
       setSendError(err instanceof Error ? err.message : 'Could not send your question. Please try again.');
     } finally {
       if (version === requestVersion.current) {
         sendingRef.current = false;
-        setPendingQuestion(null);
       }
     }
   };
@@ -186,7 +219,7 @@ export function GetAnswersPanel({
             <p className="truncate text-xs text-slate-500 sm:text-sm" title={jobTitle}>{jobTitle || 'Your application conversation'}</p>
           </div>
         </div>
-        {onClose && <button type="button" onClick={onClose} disabled={busy} aria-label="Close answers chat"
+        {onClose && <button type="button" onClick={onClose} aria-label="Close answers chat"
           className="shrink-0 rounded-lg p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-600/40 disabled:opacity-40"><X className="h-5 w-5" /></button>}
       </header>
 
@@ -238,7 +271,7 @@ export function GetAnswersPanel({
       </div>
 
       <form onSubmit={(event) => { event.preventDefault(); void send(); }} className="shrink-0 border-t border-[var(--border)] bg-white px-3 pb-3 pt-3 sm:px-5 sm:pb-4">
-        {sendError && <p role="alert" className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{sendError} Your question is still below; you can try again.</p>}
+        {sendError && <p role="alert" className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{sendError}</p>}
         <div className="flex items-end gap-2 rounded-2xl border border-[var(--border)] bg-white p-2 shadow-sm focus-within:border-teal-600/60 focus-within:ring-2 focus-within:ring-teal-600/10">
           <label htmlFor={composerId} className="sr-only">Your question</label>
           <textarea id={composerId} ref={composerRef} value={draft} rows={1} maxLength={4000} aria-describedby={hintId}
@@ -282,9 +315,9 @@ export function GetAnswersDialog({ generationId, jobTitle, onClose }: {
 
   return (
     <dialog ref={dialogRef} aria-label="Get answers" aria-modal="true"
-      onCancel={(event) => { event.preventDefault(); if (!busy) onClose(); }}
+      onCancel={(event) => { event.preventDefault(); onClose(); }}
       onClick={(event) => {
-        if (event.target !== event.currentTarget || busy) return;
+        if (event.target !== event.currentTarget) return;
         const bounds = event.currentTarget.getBoundingClientRect();
         if (event.clientX < bounds.left || event.clientX > bounds.right || event.clientY < bounds.top || event.clientY > bounds.bottom) onClose();
       }}

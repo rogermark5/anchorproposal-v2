@@ -3,6 +3,8 @@ import {
   generationOutputSchema,
   plainText,
   plainTextList,
+  normalizeAiText,
+  readableAnswer,
   type GenerationOutput,
 } from '@anchorproposal/shared';
 import { SettingsService } from '../settings/settings.service';
@@ -128,9 +130,9 @@ export class DeepseekService {
     }
 
     return {
-      content: validated,
+      content: normalizeAiText(validated),
       tokenUsage,
-      transcript,
+      transcript: transcript.map(turn => turn.role === 'assistant' ? { ...turn, content: normalizeAiText(turn.content) } : turn),
     };
   }
 
@@ -193,7 +195,7 @@ export class DeepseekService {
     if (this.experiencesMissingBullets(validated)) {
       throw new Error('Every experience must include bullet points. Ask your model to add a bullets array and paste the corrected JSON.');
     }
-    return validated;
+    return normalizeAiText(validated);
   }
 
   /** Plain-text follow-up on an existing resume conversation. */
@@ -203,9 +205,11 @@ export class DeepseekService {
     const apiKey = await this.settings.requireApiKey();
     const model = await this.settings.getModel();
     const maxAttempts = 3;
+    const deadline = AbortSignal.timeout(240_000);
 
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       const response = await fetch('https://api.deepseek.com/chat/completions', {
+        signal: deadline,
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -245,7 +249,7 @@ export class DeepseekService {
         }
         break;
       }
-      return { content: raw, tokenUsage: data.usage?.total_tokens || 0 };
+      return { content: readableAnswer(raw), tokenUsage: data.usage?.total_tokens || 0 };
     }
 
     throw new Error('Empty response from DeepSeek');
@@ -329,7 +333,7 @@ export class DeepseekService {
         }
       }
 
-      return { parsed, tokenUsage: totalTokens };
+      return { parsed: normalizeAiText(parsed), tokenUsage: totalTokens };
     }
 
     throw new Error(lastError);
@@ -363,7 +367,7 @@ export class DeepseekService {
     options.signal.throwIfAborted();
     if (!finished || !raw.trim()) throw new Error('The AI connection ended before the resume was complete. Please try again.');
     options.onProgress(raw.length);
-    try { return { parsed: JSON.parse(raw), tokenUsage }; }
+    try { return { parsed: normalizeAiText(JSON.parse(raw)), tokenUsage }; }
     catch { throw new Error('The AI returned invalid JSON. Please try again.'); }
   }
 

@@ -1,4 +1,6 @@
 'use client';
+import { useTimeZone } from '@/components/time-zone-settings';
+import { formatZonedDate } from '@/lib/time-zone';
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
@@ -20,6 +22,7 @@ const features = [
 ];
 
 export function DesktopDownload() {
+  useTimeZone();
   const { user } = useAuth();
   const [release, setRelease] = useState<Release | null>(null);
   const [error, setError] = useState(false);
@@ -101,7 +104,7 @@ export function DesktopDownload() {
       <section className={styles.versionHistory} aria-labelledby="versions-title">
         <div className={styles.historyHeading}><div><span className={styles.eyebrow}>RELEASE HISTORY</span><h2 id="versions-title">All versions</h2><p>Choose any published release for Windows.</p></div>{user?.role === 'MASTER' && <Link href="/settings#desktop">Manage releases <ArrowRight size={15}/></Link>}</div>
         {!versions.length ? <p className={styles.historyEmpty}>{error ? 'Version history could not be loaded. Use Check again above to retry.' : !release ? 'Loading versions…' : 'No version history has been published yet.'}</p> : <div className={styles.versionList}>{versions.map(version => <article key={version.id} className={styles.version} aria-label={`Version ${version.version}`}>
-          <div className={styles.versionHeading}><h3>Version {version.version}</h3>{version.id === latestId && <span>Latest</span>}<time dateTime={version.publishedAt || version.createdAt}>{new Date(version.publishedAt || version.createdAt).toLocaleDateString()}</time></div>
+          <div className={styles.versionHeading}><h3>Version {version.version}</h3>{version.id === latestId && <span>Latest</span>}<time dateTime={version.publishedAt || version.createdAt}>{formatZonedDate(version.publishedAt || version.createdAt)}</time></div>
           {version.notes && <p className={styles.releaseNotes}>{version.notes}</p>}
           <div className={styles.versionFiles}>{(['setup', 'portable'] as const).map(kind => {
             const artifact = version.downloads[kind]; const name = kind === 'setup' ? 'Setup installer' : 'Portable app';

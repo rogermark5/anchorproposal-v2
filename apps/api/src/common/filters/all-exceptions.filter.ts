@@ -15,7 +15,8 @@ export class AllExceptionsFilter implements ExceptionFilter {
   catch(exception: unknown, host: ArgumentsHost) {
     const ctx = host.switchToHttp();
     const response = ctx.getResponse<Response>();
-    const requestId = (host.switchToHttp().getRequest() as { requestId?: string }).requestId;
+    const request = host.switchToHttp().getRequest() as { requestId?: string; method?: string; path?: string };
+    const requestId = request.requestId;
 
     let status = HttpStatus.INTERNAL_SERVER_ERROR;
     let message = 'Internal server error';
@@ -26,12 +27,17 @@ export class AllExceptionsFilter implements ExceptionFilter {
       message = typeof res === 'string' ? res : (res as { message?: string }).message || message;
     }
     const databaseError = exception as { code?: string; meta?: { target?: string[] } } | null;
+    if (['P1001', 'P1002', 'P1008', 'P1017', 'P2024'].includes(databaseError?.code || '')) {
+      status = HttpStatus.SERVICE_UNAVAILABLE;
+      message = 'The database is temporarily unavailable or busy. Your session is kept; please try again shortly.';
+      response.setHeader('Retry-After', '2');
+    }
     if (databaseError?.code === 'P2002' && databaseError.meta?.target?.includes('normalizedJobUrl')) {
       status = HttpStatus.CONFLICT;
       message = 'This profile already has an application for this job link.';
     }
 
-    this.logger.error(exception);
+    this.logger.error(`[${requestId}] ${request.method} ${request.path} HTTP ${status}: ${exception instanceof Error ? exception.message : message}`);
 
     response.status(status).json({
       statusCode: status,

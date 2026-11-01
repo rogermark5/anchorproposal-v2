@@ -5,6 +5,9 @@ export function documentDownloadUrl(fileId){
   return API_SERVER+'/documents/'+fileId+'/download';
 }
 const routes = [
+  [/^\/generations\/[\w-]+\/answers\/requests(?:\/[\w-]+)?$/, ['GET','POST']],
+  [/^\/settings\/time-zone$/, ['GET','PATCH']],
+  [/^\/generations\/[\w-]+\/cancel$/, ['POST']],
   [/^\/application-options(?:\/[\w-]+(?:\/set-default)?)?$/, ['GET','POST','PATCH','DELETE']],
   [/^\/auth\/(me|logout)$/, ['GET','POST']],
   [/^\/auth\/change-password$/, ['PATCH']],
