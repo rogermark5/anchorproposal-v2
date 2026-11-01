@@ -24,6 +24,7 @@ config.bat
 /tmp/inspect-config.cjs
 /tmp/functional-qa/
 /tmp/job-pool-qa/
+/tmp/font-qa/
 
 # Local credentials
 .env
