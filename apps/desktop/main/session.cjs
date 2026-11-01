@@ -1,6 +1,8 @@
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { serverUrl } = require('./security.cjs');
+let http;
+try { http = require('./http.cjs'); } catch (error) { if (error.code !== 'MODULE_NOT_FOUND') throw error; http = require('../../../packages/shared/dist/http.js'); }
 
 class DesktopSession {
   constructor({ directory, secureStorage, fetcher = fetch }) {
@@ -38,12 +40,11 @@ class DesktopSession {
   }
   async raw(route, options = {}) {
     if (!this.server) throw new Error('Enter your hosted API server URL in Server connection first.');
-    return this.fetcher(this.server + route, { ...options, redirect: 'error', signal: options.signal || AbortSignal.timeout(15000), headers: { ...(options.body instanceof FormData ? {} : { 'Content-Type': 'application/json' }), 'ngrok-skip-browser-warning': 'true', ...options.headers } });
+    let body; try { body = JSON.parse(options.body); } catch {}
+    return http.fetchWithRecovery(this.server + route, { ...options, redirect: 'error', headers: { ...(options.body instanceof FormData ? {} : { 'Content-Type': 'application/json' }), 'ngrok-skip-browser-warning': 'true', ...options.headers } }, { fetcher: this.fetcher, timeoutMs: /\/export$|\/edits$|\/draft-preview$|\/answers(?:\/prompt)?$/.test(route) ? 240000 : 30000, idempotent: options.method === 'POST' && (!!body?.idempotencyKey || /\/cancel$/.test(route)) });
   }
   async parse(response) {
-    const body = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(Array.isArray(body.message) ? body.message.join(' ') : body.message || `Server request failed (${response.status}).`);
-    return body;
+    return http.responseJson(response);
   }
   async authenticate(route, data) {
     const epoch = this.epoch;

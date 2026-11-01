@@ -8,10 +8,11 @@ import { useAuth } from '@/lib/auth-context';
 import { formatDate } from '@/lib/utils';
 import { PrivateGenerationSettings } from '@/components/private-generation-settings';
 import { DesktopReleaseManager } from '@/components/desktop-release-manager';
+import { TimeZoneSettings, useTimeZone } from '@/components/time-zone-settings';
 
-type MasterTab = 'prompts' | 'ai' | 'warnings' | 'audit' | 'desktop';
-type AdminTab = 'prompt' | 'account';
-type BidderTab = 'prompt' | 'account';
+type MasterTab = 'prompts' | 'ai' | 'warnings' | 'audit' | 'desktop' | 'time-zone';
+type AdminTab = 'prompt' | 'account' | 'time-zone';
+type BidderTab = 'prompt' | 'account' | 'time-zone';
 
 type PromptRow = {
   id: string;
@@ -61,12 +62,21 @@ function AnswerPromptCard({
 }
 
 export default function SettingsPage() {
+  useTimeZone();
   const { isMaster, isAdmin, user } = useAuth();
   const isAdminOnly = isAdmin && !isMaster;
   const isBidder = user?.role === 'BIDDER';
 
   const [masterTab, setMasterTab] = useState<MasterTab>('prompts');
-  useEffect(() => { if (isMaster && window.location.hash.split('#').pop() === 'desktop') setMasterTab('desktop'); }, [isMaster]);
+  const rememberTab = (tab: string) => { try { sessionStorage.setItem(`settings-tab:${user?.id}`, tab); } catch {} };
+  useEffect(() => {
+    let tab = window.location.hash.slice(1);
+    if (!['prompts', 'prompt', 'ai', 'warnings', 'audit', 'desktop', 'account', 'time-zone'].includes(tab)) {
+      try { tab = sessionStorage.getItem(`settings-tab:${user?.id}`) || ''; } catch {}
+    }
+    if (isMaster && ['prompts', 'ai', 'warnings', 'audit', 'desktop', 'time-zone'].includes(tab)) setMasterTab(tab as MasterTab);
+    if (!isMaster && ['prompt', 'account', 'time-zone'].includes(tab)) setStaffTab(tab as AdminTab | BidderTab);
+  }, [isMaster, user?.id]);
   const [staffTab, setStaffTab] = useState<AdminTab | BidderTab>('prompt');
 
   const [prompts, setPrompts] = useState<PromptRow[]>([]);
@@ -429,11 +439,11 @@ export default function SettingsPage() {
         </div>
 
         <div className="flex gap-1 border-b border-[var(--border)] mb-6">
-          {masterTabs.map((t) => (
+          {[...masterTabs, { key: 'time-zone' as const, label: 'Time zone' }].map((t) => (
             <button
               key={t.key}
               type="button"
-              onClick={() => setMasterTab(t.key)}
+              onClick={() => { setMasterTab(t.key); rememberTab(t.key); }}
               className={`px-4 py-2.5 text-sm font-medium border-b-2 -mb-px ${
                 masterTab === t.key ? 'border-primary text-primary' : 'border-transparent text-slate-500'
               }`}
@@ -444,6 +454,7 @@ export default function SettingsPage() {
         </div>
 
         {masterTab === 'desktop' && <DesktopReleaseManager />}
+        {masterTab === 'time-zone' && <TimeZoneSettings />}
         {masterTab === 'prompts' && <PrivateGenerationSettings />}
 
         {masterTab === 'ai' && (
@@ -626,11 +637,11 @@ export default function SettingsPage() {
       </div>
 
       <div className="flex gap-1 border-b border-[var(--border)] mb-6">
-        {tabs.map((t) => (
+        {[...tabs, { key: 'time-zone' as const, label: 'Time zone' }].map((t) => (
           <button
             key={t.key}
             type="button"
-            onClick={() => setStaffTab(t.key)}
+            onClick={() => { setStaffTab(t.key); rememberTab(t.key); }}
             className={`px-4 py-2.5 text-sm font-medium border-b-2 -mb-px ${
               staffTab === t.key ? 'border-primary text-primary' : 'border-transparent text-slate-500'
             }`}
@@ -643,6 +654,7 @@ export default function SettingsPage() {
       {staffTab === 'prompt' && <PrivateGenerationSettings />}
 
       {staffTab === 'account' && accountTab}
+      {staffTab === 'time-zone' && <TimeZoneSettings />}
     </div>
   );
 }

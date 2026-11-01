@@ -109,7 +109,7 @@ test('existing stored resumes align private JSON, preview, public links and fres
     const renderer = { renderAll: async (_applicationId, _generationId, output, _config, _name, [type]) => {
       seen.push({ output, type }); return [{ type, kind: 'RESUME', storagePath: 'qa-output' }];
     } };
-    const service = new GenerationsService(prisma, {}, {}, {}, new TemplatesService({}), renderer, {}, {});
+    const service = new GenerationsService(prisma, {}, {}, {getTimeZone:async()=>({timeZone:'UTC'})}, new TemplatesService({}), renderer, {}, {});
     service.assertAppAccess = async () => {};
     const user = { id: 'owner', role: 'MASTER' };
     assert.equal((await service.findOne('g', user)).structuredOutputJson.contact.title, recentRole);

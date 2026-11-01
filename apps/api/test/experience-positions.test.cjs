@@ -140,7 +140,7 @@ test('queued worker uses the persisted mode and profile snapshot and saves tailo
   let system, request; s.chatJson = async (_key, _model, turns) => { system = turns[0].content; request = turns[1].content; return { parsed: { ...compact(), coverLetter: { greeting: 'Dear Hiring Manager,', paragraphs: ['My Java API work is relevant to the Backend Engineer role and its service development responsibilities.'], closing: 'Sincerely,' } }, tokenUsage: 100 }; };
   const updates = [], turns = [];
   const generation = { id: 'g1', creatorId: 'user', experienceTitleMode: 'tailored', profileSnapshotJson: snapshot, promptVersion: { content: '{{profileJson}}\n{{jobDescription}}' }, application: { jobTitle: 'Backend Engineer', company: 'Hiring', jobDescription: 'Build Java APIs.' } };
-  const processor = new GenerationProcessor({ resumeGeneration: { findUnique: async () => generation }, generationTurn: { count: async () => 0, createMany: async ({ data }) => turns.push(...data) }, auditEvent: { create: async () => {} } }, { updateStatus: async (id, status, data) => updates.push({ id, status, data }) }, s);
+  const processor = new GenerationProcessor({ resumeGeneration: { findUnique: async () => generation }, generationTurn: { count: async () => 0, createMany: async ({ data }) => turns.push(...data) }, auditEvent: { create: async () => {} } }, { withCancellation: async (_id,work) => work(new AbortController().signal), updateStatus: async (id, status, data) => updates.push({ id, status, data }) }, s);
   await processor.process({ data: { generationId: 'g1' } });
   assert.match(system, /Experience title mode: tailored/); assert.equal(updates.at(-1).status, 'COMPLETED');
   assert.match(request, /exactly 2 experiences/);

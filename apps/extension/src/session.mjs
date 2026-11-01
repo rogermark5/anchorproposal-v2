@@ -1,4 +1,5 @@
 import { API_SERVER, apiRoute } from './security.mjs';
+import { fetchWithRecovery, responseJson } from '../../../packages/shared/dist/http.js';
 export class ApiError extends Error {
   constructor(message,status=0,retryAfter=0) { super(message); this.status=status; this.retryAfter=retryAfter; }
 }
@@ -7,13 +8,11 @@ export class Session {
   commit(epoch,work) {const result=this.commits.then(()=>{if(epoch!==this.epoch)throw new ApiError('The account changed.',401);return work();});this.commits=result.catch(()=>{});return result;}
   async current() { return (await this.session.get('auth')).auth || null; }
   async parse(response) {
-    const body=await response.json().catch(()=>null);
-    if (!response.ok) throw new ApiError((Array.isArray(body?.message)?body.message.join(' '):body?.message || 'The server could not complete this request.').slice(0,1000),response.status,Number(response.headers.get('retry-after'))||0);
-    if (body===null) throw new ApiError('The server returned an invalid response.',502);
-    return body;
+    return responseJson(response);
   }
   async raw(route, options={}) {
-    return this.fetch(API_SERVER+route,{...options,credentials:'omit',redirect:'error',signal:AbortSignal.timeout(24000),headers:{'Content-Type':'application/json',...options.headers}});
+    let body; try { body=JSON.parse(options.body); } catch {}
+    return fetchWithRecovery(API_SERVER+route,{...options,credentials:'omit',redirect:'error',headers:{'Content-Type':'application/json',...options.headers}}, { fetcher:this.fetch, timeoutMs:/\/export$|\/edits$|\/draft-preview$|\/answers(?:\/prompt)?$/.test(route)?240000:30000, idempotent:options.method==='POST'&&(!!body?.idempotencyKey||/\/cancel$/.test(route)) });
   }
   async login(email,password) {
     if (typeof email!=='string'||typeof password!=='string'||email.length>320||password.length>1000) throw Error('Enter your email and password.');
@@ -53,7 +52,7 @@ export class Session {
     check();
     const send=()=>this.raw(route,{method,headers:{Authorization:'Bearer '+auth.accessToken},...(body===undefined?{}:{body:JSON.stringify(body)})});
     let response=await send();
-    if(response.status===401) { auth=await this.refresh();check();response=await send(); }
+    if(response.status===401) { const latest=await this.current(); auth=latest&&latest.accessToken!==auth.accessToken?latest:await this.refresh();check();response=await send(); }
     const result=await this.parse(response);check();return result;
   }
   async logout() {

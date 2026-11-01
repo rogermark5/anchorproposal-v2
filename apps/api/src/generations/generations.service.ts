@@ -19,6 +19,7 @@ import { DocumentRendererService } from '../documents/document-renderer.service'
 import { DeepseekService } from '../deepseek/deepseek.service';
 import { FileType, GenerationFileKind, GenerationStatus, UserRole, Prisma } from '@prisma/client';
 import type { GenerationOutput } from '@anchorproposal/shared';
+import { normalizeAiText, calendarDay } from '@anchorproposal/shared';
 import { AuthUser } from '../common/types/auth.types';
 import { canBid, isAdmin, isMaster } from '../common/utils/roles.util';
 import { parseExperienceTitleMode, type ExperienceTitleMode } from './experience-title-mode';
@@ -27,6 +28,7 @@ import { documentDownloadFilename } from '../documents/download-filename';
 import { bindProfileOutput, hasProfileIdentityConflict, redactPromptMetadata } from './profile-output';
 import { applyDocumentDisplay, defaultDocumentDisplay } from './document-display';
 import { documentEditsSchema, editedDocument } from './document-edits';
+import { ACTIVE_GENERATION_STATUSES, GenerationCancelled } from './generation-cancelled';
 
 export type ManualGenerationInput = {
   responseJson: string;
@@ -39,6 +41,29 @@ export type ManualGenerationInput = {
 
 @Injectable()
 export class GenerationsService {
+  private activeControllers = new Map<string, AbortController>();
+  async cancel(id: string, user: AuthUser) {
+    const generation = await this.getAccessibleGeneration(id, user);
+    if (generation.creatorId !== user.id) throw new ForbiddenException('Only the creator can cancel this generation.');
+    await this.prisma.resumeGeneration.updateMany({ where: { id, status: { in: [...ACTIVE_GENERATION_STATUSES] } }, data: { status: GenerationStatus.CANCELLED, errorMessage: 'Cancelled by you.' } });
+    this.activeControllers.get(id)?.abort(new GenerationCancelled());
+    // The database is authoritative, including when Redis is restarting.
+    void (async () => { const job = await this.queue.getJob(id); if (job && await job.getState() !== 'active') await job.remove(); })().catch(() => {});
+    return this.findOne(id, user);
+  }
+
+  async withCancellation<T>(id: string, work: (signal: AbortSignal) => Promise<T>): Promise<T> {
+    const controller = new AbortController(); this.activeControllers.set(id, controller);
+    let checking = false;
+    const check = async () => {
+      if (checking) return; checking = true;
+      try { const row = await this.prisma.resumeGeneration.findUnique({ where: { id }, select: { status: true } }); if (!row || row.status === GenerationStatus.CANCELLED) controller.abort(new GenerationCancelled()); }
+      finally { checking = false; }
+    };
+    const timer = setInterval(() => { void check().catch(() => {}); }, 750); timer.unref();
+    try { await check(); return await work(AbortSignal.any([controller.signal, AbortSignal.timeout(10 * 60_000)])); }
+    finally { clearInterval(timer); if (this.activeControllers.get(id) === controller) this.activeControllers.delete(id); }
+  }
   constructor(
     private prisma: PrismaService,
     private profilesService: ProfilesService,
@@ -278,6 +303,8 @@ export class GenerationsService {
         templateConfigSnapshotJson: context.templateConfigSnapshotJson,
       } });
     });
+    return this.withCancellation(generation.id, async cancellation => {
+    signal = AbortSignal.any([signal, cancellation]);
     try {
       emit({ stage: 'generating', generationId: generation.id, characters: 0 });
       const snapshot = context.profileSnapshot;
@@ -296,13 +323,14 @@ export class GenerationsService {
       signal.throwIfAborted();
       emit({ stage: 'saving' });
       await this.prisma.$transaction(async (tx) => {
-        await tx.resumeGeneration.update({ where: { id: generation.id }, data: {
+        const saved = await tx.resumeGeneration.updateMany({ where: { id: generation.id, status: GenerationStatus.GENERATING }, data: {
           status: GenerationStatus.COMPLETED, completedAt: new Date(), tokenUsage: result.tokenUsage,
           structuredOutputJson: JSON.parse(JSON.stringify(result.content)),
-          turns: { create: result.transcript.map((turn, index) => ({
-            sequence: index + 1, role: turn.role, purpose: `resume_${turn.role}`, content: turn.content,
-          })) },
         } });
+        if (!saved.count) throw new GenerationCancelled();
+        await tx.generationTurn.createMany({ data: result.transcript.map((turn, index) => ({ generationId: generation.id,
+          sequence: index + 1, role: turn.role, purpose: `resume_${turn.role}`, content: turn.content,
+        })) });
         await tx.auditEvent.create({ data: { action: 'RESUME_DESKTOP_GENERATED', targetType: 'ResumeGeneration', targetId: generation.id, actorId: user.id } });
       });
       emit({ stage: 'completed', generationId: generation.id, tokenUsage: result.tokenUsage });
@@ -314,6 +342,7 @@ export class GenerationsService {
       } });
       throw error;
     }
+    });
   }
 
   async importManualGeneration(applicationId: string, user: AuthUser, input: ManualGenerationInput) {
@@ -442,7 +471,7 @@ export class GenerationsService {
     if (generation.requiresRegeneration) throw new BadRequestException('This old resume contains conflicting profile information. Generate a new version before previewing, downloading or sharing it.');
     const output = generation.structuredOutputJson as GenerationOutput;
     const canEdit = generation.creatorId === user.id && canBid(user.role) && Boolean((await this.prisma.user.findUnique({ where: { id: user.id } }))?.canGenerateResumes);
-    return this.documentPreview(generation, output, await this.documentConfig(generation), canEdit);
+    return this.documentPreview(generation, output, await this.documentConfig(generation), canEdit, (await this.settingsService.getTimeZone(user.id)).timeZone || 'UTC');
   }
 
   private async documentConfig(generation: { creatorId?: string; templateConfigSnapshotJson?: unknown; templateVersion?: { configJson: unknown } | null }) {
@@ -450,7 +479,7 @@ export class GenerationsService {
     return applyDocumentDisplay((generation.templateConfigSnapshotJson || generation.templateVersion?.configJson || {}) as object, display);
   }
 
-  private documentPreview(generation: { id: string; version: number; completedAt?: Date | null; createdAt?: Date; application: { company: string; jobTitle: string } }, output: GenerationOutput, config: object, canEdit: boolean) {
+  private documentPreview(generation: { id: string; version: number; completedAt?: Date | null; createdAt?: Date; application: { company: string; jobTitle: string } }, output: GenerationOutput, config: object, canEdit: boolean, timeZone = 'UTC') {
     const html = this.templatesService.renderPreviewHtml(
       {
         contact: output.contact,
@@ -469,7 +498,7 @@ export class GenerationsService {
     const coverLetter = usableCoverLetter(output.coverLetter, output.contact.name);
     return { html, pageSize: box.pageSize, content: output, canEdit, generationId: generation.id, version: generation.version, coverLetterHtml: coverLetter ? renderCoverLetterHtml({ ...coverLetter,
       contact: output.contact, company: generation.application.company, jobTitle: generation.application.jobTitle,
-      date: (generation.completedAt || generation.createdAt)?.toISOString(),
+      date: calendarDay(generation.completedAt || generation.createdAt || new Date(), timeZone),
     }, config) : null };
   }
 
@@ -492,7 +521,7 @@ export class GenerationsService {
 
   async previewEdits(id: string, user: AuthUser, input: unknown) {
     const source = await this.editableGeneration(id, user);
-    return this.documentPreview(source, this.applyEdits(source, input), await this.documentConfig(source), true);
+    return this.documentPreview(source, this.applyEdits(source, input), await this.documentConfig(source), true, (await this.settingsService.getTimeZone(user.id)).timeZone || 'UTC');
   }
 
   async saveEdits(id: string, user: AuthUser, input: unknown) {
@@ -533,7 +562,7 @@ export class GenerationsService {
   private safeGeneration<T extends { structuredOutputJson: unknown; profileSnapshotJson: unknown; isUserEdited?: boolean }>(generation: T) {
     if (!generation.structuredOutputJson) return { ...redactPromptMetadata(generation), requiresRegeneration: false };
     const output = generation.structuredOutputJson as GenerationOutput;
-    const safe = bindProfileOutput(output, generation.profileSnapshotJson, generation.isUserEdited);
+    const safe = normalizeAiText(bindProfileOutput(output, generation.profileSnapshotJson, generation.isUserEdited));
     const requiresRegeneration = hasProfileIdentityConflict(output, generation.profileSnapshotJson);
     return { ...redactPromptMetadata(generation), structuredOutputJson: safe, requiresRegeneration };
   }
@@ -571,7 +600,7 @@ export class GenerationsService {
     }
 
     const existing = generation.files.find((file) => file.kind === kind && file.type === type);
-    const output = bindProfileOutput(generation.structuredOutputJson as GenerationOutput, generation.profileSnapshotJson, generation.isUserEdited);
+    const output = normalizeAiText(bindProfileOutput(generation.structuredOutputJson as GenerationOutput, generation.profileSnapshotJson, generation.isUserEdited));
     if (this.safeGeneration(generation).requiresRegeneration) throw new BadRequestException('This old resume contains conflicting profile information. Generate a new version before downloading it.');
     const profile = generation.profileSnapshotJson as { firstName?: string; lastName?: string };
     const baseFilename =
@@ -613,7 +642,7 @@ export class GenerationsService {
               company: generation.application.company,
               contact: output.contact,
               jobTitle: generation.application.jobTitle,
-              date: (generation.completedAt || generation.createdAt)?.toISOString(),
+              date: calendarDay(generation.completedAt || generation.createdAt || new Date(), (await this.settingsService.getTimeZone(user.id)).timeZone || 'UTC'),
             },
             baseFilename,
             templateConfig,
@@ -677,7 +706,7 @@ export class GenerationsService {
     try { payload = decryptResumeLink(token, this.shareSecret()); } catch { throw new NotFoundException('Resume link is invalid or expired'); }
     const generation = await this.prisma.resumeGeneration.findUnique({ where: { id: payload.id }, include: { templateVersion: true } });
     if (!generation || generation.publicShareNonce !== payload.nonce || generation.status !== GenerationStatus.COMPLETED || !generation.structuredOutputJson) throw new NotFoundException('Resume link is no longer available');
-    const output = bindProfileOutput(generation.structuredOutputJson as GenerationOutput, generation.profileSnapshotJson, generation.isUserEdited);
+    const output = normalizeAiText(bindProfileOutput(generation.structuredOutputJson as GenerationOutput, generation.profileSnapshotJson, generation.isUserEdited));
     if (this.safeGeneration(generation).requiresRegeneration) throw new NotFoundException('Resume link is no longer available');
     const config = await this.documentConfig(generation);
     return { html: this.templatesService.renderPreviewHtml(output, config), pageSize: this.templatesService.pdfLayout(config).pageSize };
@@ -693,13 +722,15 @@ export class GenerationsService {
       errorMessage: string;
     }>,
   ) {
-    return this.prisma.resumeGeneration.update({
-      where: { id },
+    const result = await this.prisma.resumeGeneration.updateMany({
+      where: { id, status: { in: [...ACTIVE_GENERATION_STATUSES] } },
       data: {
         status,
         ...data,
         ...(status === GenerationStatus.COMPLETED ? { completedAt: new Date() } : {}),
       },
     });
+    if (!result.count) throw new GenerationCancelled();
+    return this.prisma.resumeGeneration.findUnique({ where: { id } });
   }
 }

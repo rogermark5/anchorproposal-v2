@@ -15,6 +15,7 @@ function client(fetch, anchor) {
     removeItem: (key) => storage.delete(key),
   } };
   context.require = name => {
+    if (name === '@anchorproposal/shared') return require('../../../packages/shared/dist');
     assert.ok(['./desktop-bridge', './download-filename'].includes(name), `Unexpected client import: ${name}`);
     const moduleSource = fs.readFileSync(path.resolve(__dirname, '../../web/src/lib', `${name}.ts`), 'utf8');
     const moduleContext = { ...context, exports: {} };
@@ -94,4 +95,14 @@ test('public share URLs use the website origin in browsers and the hosted server
   assert.equal(result.path, share.path);
   assert.equal(calls[0][0], '/generations/g/public-link');
   assert.equal(calls[0][1], 'POST');
+});
+
+test('a temporary refresh failure preserves credentials and a later request can recover', async () => {
+  let unavailable=true;
+  const {api,storage}=client(async(url,options)=>{
+    if(url.endsWith('/auth/refresh'))return unavailable?json({},503):json({accessToken:'new-access',refreshToken:'new-refresh'});
+    return options.headers.Authorization==='Bearer new-access'?json({id:'owner'}):json({},401);
+  });
+  await assert.rejects(api.getMe(),/busy|restarting/);assert.equal(storage.get('refreshToken'),'old-refresh');
+  unavailable=false;assert.equal((await api.getMe()).id,'owner');assert.equal(storage.get('refreshToken'),'new-refresh');
 });

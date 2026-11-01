@@ -1,3 +1,4 @@
+import { profileAccessWhere } from '../common/utils/profile-access';
 import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException, OnApplicationBootstrap, OnModuleDestroy } from '@nestjs/common';
 import { Prisma, UserRole } from '@prisma/client';
 import { randomUUID } from 'node:crypto';
@@ -247,7 +248,20 @@ export class JobPoolService implements OnApplicationBootstrap, OnModuleDestroy {
   private async companyFilters(user: AuthUser, query: Record<string, string | undefined>, now: Date): Promise<Prisma.JobPoolJobWhereInput> {
     if (query.companyStatus === 'true' && !['all', 'applied', 'not-applied'].includes(query.status || 'not-applied')) throw new BadRequestException('Choose a valid applied status.');
     const where: Prisma.JobPoolJobWhereInput = {};
-    if (query.company) { if (query.company.length > 1000) throw new BadRequestException('Invalid company filter.'); where.companyKey = companyKey(query.company); }
+    if (query.excludeProfileIds !== undefined) {
+      const ids = [...new Set(query.excludeProfileIds.split(',').filter(Boolean))];
+      if (!ids.length || ids.length > 100 || ids.some(id => !/^[\w-]{1,100}$/.test(id))) throw new BadRequestException('Choose valid profiles for duplicate filtering.');
+      const accessible = await this.prisma.profile.findMany({ where: { id: { in: ids }, archivedAt: null,
+        ...profileAccessWhere(user) }, select: { id: true } });
+      if (accessible.length !== ids.length) throw new ForbiddenException('Choose profiles you can access.');
+      const [applications, marks] = await Promise.all([
+        this.prisma.application.findMany({ where: { bidderId: user.id, profileId: { in: ids } }, select: { company: true } }),
+        this.prisma.jobPoolApplied.findMany({ where: { userId: user.id, profileId: { in: ids } }, select: { job: { select: { companyKey: true } } } }),
+      ]);
+      const keys = [...new Set([...applications.map(row => companyKey(row.company)), ...marks.map(row => row.job.companyKey)].filter(Boolean))];
+      where.companyKey = { notIn: keys };
+    }
+    if (query.company) { if (query.company.length > 1000) throw new BadRequestException('Invalid company filter.'); where.AND = [{ companyKey: companyKey(query.company) }]; }
     if (query.newCompanies === 'true') where.companyRecord = { is: { firstSeenAt: { gte: new Date(now.getTime() - DAY), lte: now } } };
     if (query.companyStatus === 'true' && (query.status || 'not-applied') !== 'all') {
       // All of this actor's history counts, including old profiles; no other
@@ -335,7 +349,9 @@ export class JobPoolService implements OnApplicationBootstrap, OnModuleDestroy {
           const aliases = new Map<string, string>(), primaryJobs = new Set<string>();
           const contentMatches = new Map<string, { canonicalUrl: string; preferred: boolean }[]>();
           if (AGGREGATORS.includes(source.provider) && source.provider !== 'himalayas') {
-            const saved = await this.prisma.jobPoolJob.findMany({ select: { jobUrl: true, canonicalUrl: true, externalId: true, isActive: true, isSoftware: true, lastSeenAt: true,
+            let afterId: string | undefined;
+            while (!this.stopping) {
+            const saved = await this.prisma.jobPoolJob.findMany({ take: 500, orderBy: { id: 'asc' }, ...(afterId ? { cursor: { id: afterId }, skip: 1 } : {}), select: { id: true, jobUrl: true, canonicalUrl: true, externalId: true, isActive: true, isSoftware: true, lastSeenAt: true,
               ...(CONTENT_MATCHED_FEEDS.includes(source.provider) ? { company: true, title: true, publishedAt: true } : {}), source: { select: { provider: true, boardToken: true, enabled: true } } } });
             for (const job of saved) {
               const keys = [poolJobIdentity(job.jobUrl)];
@@ -350,6 +366,9 @@ export class JobPoolService implements OnApplicationBootstrap, OnModuleDestroy {
                 matches.push({canonicalUrl: job.canonicalUrl, preferred: !!job.publishedAt && job.source?.provider !== source.provider && job.isActive && job.isSoftware && job.source?.enabled !== false && job.lastSeenAt.getTime() >= Date.now() - 7 * DAY});
                 contentMatches.set(group, matches);
               }
+            }
+            if (saved.length < 500) break;
+            afterId = saved[saved.length - 1].id;
             }
           }
           let cursor: string | null = null, complete = false, incomplete = false; const cursors = new Set<string>();
@@ -455,7 +474,7 @@ export class JobPoolService implements OnApplicationBootstrap, OnModuleDestroy {
       return { total: listing.total, newCount, checkedAt: now.toISOString(), latestImport: listing.latestImport, newCompanyCount: listing.newCompanyCount, groupedByCompany: true };
     }
     const base = this.jobFilters(user, { ...query, ...(query.companyStatus === 'true' ? { status: 'all' } : {}) }, now, now, (await this.settings()).excludedTitleKeywords);
-    const where: Prisma.JobPoolJobWhereInput = query.companyStatus === 'true' || query.company || query.newCompanies === 'true' ? { AND: [base, await this.companyFilters(user, query, now)] } : base;
+    const where: Prisma.JobPoolJobWhereInput = query.companyStatus === 'true' || query.company || query.newCompanies === 'true' || query.excludeProfileIds ? { AND: [base, await this.companyFilters(user, query, now)] } : base;
     const [total, newCount, latestImport] = await Promise.all([this.prisma.jobPoolJob.count({where}), this.prisma.jobPoolJob.count({where: {AND: [where, {createdAt: {gt: since, lte: now}}]}}), this.latestImport()]);
     return {total, newCount, checkedAt: now.toISOString(), latestImport};
   }

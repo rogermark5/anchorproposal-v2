@@ -13,6 +13,16 @@ import type { DocumentKind } from '../deepseek/json-rules';
 export class SettingsController {
   constructor(private settingsService: SettingsService) {}
 
+  @Get('time-zone')
+  getTimeZone(@Req() req: { user: AuthUser }) {
+    return this.settingsService.getTimeZone(req.user.id);
+  }
+
+  @Patch('time-zone')
+  setTimeZone(@Body('timeZone') timeZone: unknown, @Req() req: { user: AuthUser }) {
+    return this.settingsService.setTimeZone(req.user.id, timeZone);
+  }
+
   /** Master initial prompt list */
   @Get('prompts')
   @Roles(UserRole.MASTER)

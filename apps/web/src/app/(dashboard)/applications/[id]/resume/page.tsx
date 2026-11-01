@@ -1,4 +1,5 @@
 'use client';
+import { useTimeZone } from '@/components/time-zone-settings';
 
 
 import { useEffect, useState } from 'react';
@@ -13,6 +14,7 @@ import { TemplatePreviewFrame } from '@/components/template-preview-frame';
 import { formatDate } from '@/lib/utils';
 
 export default function ResumePreviewPage() {
+  useTimeZone();
   const { id } = useParams<{ id: string }>();
   const [app, setApp] = useState<Record<string, unknown> | null>(null);
   const [selectedGen, setSelectedGen] = useState<Record<string, unknown> | null>(null);

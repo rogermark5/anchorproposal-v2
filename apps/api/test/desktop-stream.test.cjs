@@ -13,12 +13,13 @@ function fixture() {
     user: { findUnique: async () => ({ canGenerateResumes: state.permission }) },
     application: { findUnique: async () => application },
     resumeGeneration: {
-      findUnique: async ({ where }) => state.saved.find(g => g.idempotencyKey === where.idempotencyKey),
+      findUnique: async ({ where }) => state.saved.find(g => where.id ? g.id === where.id : g.idempotencyKey === where.idempotencyKey),
       findFirst: async () => state.saved.at(-1), count: async () => state.active,
       create: async ({ data }) => { const row = { id: `gen-${state.saved.length}`, ...data }; state.saved.push(row); return row; },
       update: async ({ where, data }) => Object.assign(state.saved.find(g => g.id === where.id), data),
       updateMany: async ({ where, data }) => { if (where.id) for (const g of state.saved.filter(g => g.id === where.id && g.status === where.status)) Object.assign(g, data); return { count: 1 }; },
     },
+    generationTurn: { createMany: async ({ data }) => { for (const turn of data) { const row=state.saved.find(g=>g.id===turn.generationId); row.turns ||= {create:[]}; row.turns.create.push(turn); } } },
     auditEvent: { create: async ({ data }) => state.audits.push(data) }, $queryRaw: async () => [], $transaction: async fn => fn(prisma),
   };
   const deepseek = new DeepseekService(settings);

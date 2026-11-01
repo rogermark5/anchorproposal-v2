@@ -41,6 +41,7 @@ async function build() {
   // Stage only the self-contained app: no monorepo dependencies, server code, env files, or QA helpers.
   const stage = path.join(root, 'build-app');
   await fs.mkdir(path.join(stage, 'main'), { recursive: true });
+  await esbuild.build({ entryPoints: [path.resolve(root, '../../packages/shared/src/http.ts')], bundle: true, platform: 'node', format: 'cjs', outfile: path.join(stage, 'main/http.cjs') });
   for (const name of ['index.cjs', 'preload.cjs', 'security.cjs', 'session.cjs', 'generation.cjs']) await fs.copyFile(path.join(root, 'main', name), path.join(stage, 'main', name));
   await fs.cp(path.join(root, 'dist'), path.join(stage, 'dist'), { recursive: true });
   await fs.cp(path.join(root, 'assets'), path.join(stage, 'assets'), { recursive: true });

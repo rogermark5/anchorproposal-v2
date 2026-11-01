@@ -1,3 +1,4 @@
+import { profileAccessWhere } from '../common/utils/profile-access';
 import {
   Injectable,
   ForbiddenException,
@@ -7,12 +8,22 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { AuthUser } from '../common/types/auth.types';
 import { appendJsonRules, jsonOutputRules, promptInstructions, parseDocumentKind, type DocumentKind } from '../deepseek/json-rules';
-import { DEFAULT_PROMPT, answerPromptLengthError } from '@anchorproposal/shared';
+import { DEFAULT_PROMPT, answerPromptLengthError, validTimeZone } from '@anchorproposal/shared';
 import { defaultDocumentDisplay, type DocumentDisplay } from '../generations/document-display';
 import { parseExperienceTitleMode, type ExperienceTitleMode } from '../generations/experience-title-mode';
 
 @Injectable()
 export class SettingsService {
+  async getTimeZone(userId: string) {
+    const saved = await this.prisma.systemSetting.findUnique({ where: { key: `time_zone:${userId}` } });
+    return { timeZone: saved && validTimeZone(saved.value) ? saved.value : null };
+  }
+
+  async setTimeZone(userId: string, value: unknown) {
+    if (!validTimeZone(value)) throw new BadRequestException('Choose a valid IANA time zone.');
+    await this.prisma.systemSetting.upsert({ where: { key: `time_zone:${userId}` }, create: { key: `time_zone:${userId}`, value }, update: { value } });
+    return { timeZone: value };
+  }
   constructor(private prisma: PrismaService) {}
 
   static readonly PROMPT_MODE_KEY = 'prompt_assignment_mode';
@@ -184,7 +195,7 @@ export class SettingsService {
   async getGenerationWorkflow(user: AuthUser) {
     const settings = await this.getMyPromptSettings(user);
     const profiles = await this.prisma.profile.findMany({
-      where: { archivedAt: null, ...(user.role === 'BIDDER' ? { assignments: { some: { userId: user.id, activeTo: null } } } : {}) },
+      where: { archivedAt: null, ...profileAccessWhere(user) },
       select: { id: true, firstName: true, lastName: true, profileTitle: true, generationPreferences: { where: { userId: user.id }, select: { resumePromptId: true, coverLetterPromptId: true } } },
       orderBy: [{ firstName: 'asc' }, { lastName: 'asc' }],
     });

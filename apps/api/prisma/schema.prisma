@@ -120,6 +120,7 @@ model User {
   managedBidders     User[]  @relation("AdminManagedBidders")
   selectedPrompt     PromptVersion? @relation("UserSelectedPrompt", fields: [selectedPromptId], references: [id], onDelete: SetNull)
   profileAssignments ProfileAssignment[]
+  ownedProfiles      Profile[] @relation("ProfileOwner")
   templateAssignments TemplateAssignment[]
   promptAssignments  PromptAssignment[]
   profilePromptAssignments ProfilePromptAssignment[]
@@ -189,6 +190,8 @@ model AuthChallenge {
 
 model Profile {
   id                String    @id @default(uuid())
+  ownerId           String?
+  owner             User? @relation("ProfileOwner", fields: [ownerId], references: [id], onDelete: SetNull)
   firstName         String
   lastName          String
   email             String?
@@ -220,6 +223,7 @@ model Profile {
   generationPreferences ProfileGenerationPreference[]
 
   poolAppliedJobs JobPoolApplied[]
+  @@index([ownerId])
   @@map("profiles")
 }
 
@@ -295,6 +299,7 @@ model ProfileAssignment {
   userId    String
   profileId String
   isDefault Boolean  @default(false)
+  grantedByMaster Boolean @default(false)
   activeFrom DateTime @default(now())
   activeTo  DateTime?
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -501,6 +506,7 @@ model ResumeGeneration {
   templateVersion TemplateVersion? @relation(fields: [templateVersionId], references: [id])
   files           GenerationFile[]
   turns           GenerationTurn[]
+  answerRequests  GenerationAnswerRequest[]
 
   @@index([applicationId])
   @@map("resume_generations")
@@ -537,12 +543,29 @@ model GenerationTurn {
   role         String
   purpose      String
   content      String           @db.Text
+  requestId    String?
   createdAt    DateTime         @default(now())
   generation   ResumeGeneration @relation(fields: [generationId], references: [id], onDelete: Cascade)
 
   @@unique([generationId, sequence])
+  @@unique([requestId, role])
   @@index([generationId])
   @@map("generation_turns")
+}
+
+model GenerationAnswerRequest {
+  id String @id @default(uuid())
+  generationId String
+  creatorId String
+  requestKey String @unique
+  question String @db.Text
+  status String @default("QUEUED")
+  errorMessage String? @db.Text
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  generation ResumeGeneration @relation(fields: [generationId], references: [id], onDelete: Cascade)
+  @@index([generationId, creatorId, createdAt])
+  @@map("generation_answer_requests")
 }
 
 model GenerationFile {

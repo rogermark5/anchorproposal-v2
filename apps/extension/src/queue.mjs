@@ -1,6 +1,7 @@
 import { preferences } from './security.mjs';
 export const terminal = task => ['completed','failed','cancelled'].includes(task.stage);
 const active = task => ['submitting','queued','running'].includes(task.stage);
+const generationStage = generation => generation.status==='COMPLETED'?'completed':generation.status==='FAILED'?'failed':generation.status==='CANCELLED'?'cancelled':generation.status==='QUEUED'?'queued':'running';
 export class GenerationQueue {
   constructor(store, session, changed=()=>{}, completed=()=>{}) { this.store=store;this.session=session;this.changed=changed;this.completed=completed;this.tail=Promise.resolve();this.submitting=new Set();this.documentSaves=new Map(); }
   exclusive(work) {const result=this.tail.then(work,work);this.tail=result.catch(()=>{});return result;}
@@ -75,11 +76,25 @@ export class GenerationQueue {
       task.stage='submitting';await this.save(user.id,tasks);
       try{
         const generation=await this.session.request('/applications/'+applicationId+'/generations','POST',{templateId:task.templateId,idempotencyKey:task.id},user.id);
-        task.generationId=generation.id;task.stage=generation.status==='COMPLETED'?'completed':generation.status==='FAILED'?'failed':'queued';await this.save(user.id,tasks);return generation;
+        task.generationId=generation.id;task.stage=generationStage(generation);await this.save(user.id,tasks);return generation;
       }catch(error){task.error=error.message;task.stage=[400,403,404,409].includes(error.status)?'failed':'waiting';task.nextAttemptAt=Date.now()+30000;await this.save(user.id,tasks);throw error;}
     });
   }
-  async edit(id,operation) {return this.exclusive(async()=>{const {user}=await this.session.ensure();let tasks=await this.load(user.id);if(operation==='clear-completed')tasks=tasks.filter(t=>!terminal(t));else{const task=tasks.find(t=>t.id===id);if(!task)throw Error('Queue job not found.');if(operation==='remove'&&task.stage==='waiting')task.stage='cancelled';else if(operation==='retry'&&['failed','cancelled'].includes(task.stage)){task.id=crypto.randomUUID();task.stage='waiting';delete task.generationId;delete task.error;delete task.nextAttemptAt;task.attempts=0;}else throw Error('Only waiting jobs can be removed. Submitted generations continue on the server.');}await this.save(user.id,tasks);return tasks;});}
+  async edit(id,operation) {return this.exclusive(async()=>{
+    const {user}=await this.session.ensure();let tasks=await this.load(user.id);
+    if(operation==='clear-completed')tasks=tasks.filter(t=>!terminal(t));
+    else {
+      const task=tasks.find(t=>t.id===id);if(!task)throw Error('Queue job not found.');
+      if((operation==='cancel'||operation==='remove'&&task.stage==='waiting')&&!terminal(task)) {
+        if(task.generationId) { const generation=await this.session.request('/generations/'+task.generationId+'/cancel','POST',{},user.id);task.stage=generationStage(generation); }
+        else if(task.stage==='submitting') task.cancelRequested=true;
+        else task.stage='cancelled';
+      } else if(operation==='retry'&&['failed','cancelled'].includes(task.stage)) {
+        task.id=crypto.randomUUID();task.stage='waiting';delete task.generationId;delete task.error;delete task.nextAttemptAt;delete task.cancelRequested;task.attempts=0;
+      } else throw Error('Only waiting jobs can be removed. Use Cancel generation to stop a submitted job.');
+    }
+    await this.save(user.id,tasks);return tasks;
+  });}
   async dispatch() {
     const {user}=await this.session.ensure();
     const pending=await this.exclusive(async()=>{
@@ -96,9 +111,9 @@ export class GenerationQueue {
     // and dispatch its job while an earlier submit request is still pending.
     await Promise.all(pending.map(async task=>{
       let values;
-      try{const generation=await this.session.request('/applications/'+task.applicationId+'/generations','POST',{templateId:task.templateId,idempotencyKey:task.id},user.id);values={generationId:generation.id,stage:generation.status==='COMPLETED'?'completed':generation.status==='FAILED'?'failed':'queued',error:undefined,nextAttemptAt:undefined};}
+      try{const generation=await this.session.request('/applications/'+task.applicationId+'/generations','POST',{templateId:task.templateId,idempotencyKey:task.id},user.id);values={generationId:generation.id,stage:generationStage(generation),error:undefined,nextAttemptAt:undefined};}
       catch(error){const attempts=(task.attempts||0)+1;values={attempts,error:error.message,stage:[400,403,404,409].includes(error.status)?'failed':'waiting',nextAttemptAt:Date.now()+Math.max(error.retryAfter*1000||0,Math.min(600000,30000*2**Math.min(attempts,4)))};}
-      try{await this.exclusive(async()=>{const tasks=await this.load(user.id),current=tasks.find(item=>item.id===task.id);if(current){Object.assign(current,values);await this.save(user.id,tasks);}});}finally{this.submitting.delete(task.id);}
+      try{await this.exclusive(async()=>{const tasks=await this.load(user.id),current=tasks.find(item=>item.id===task.id);if(current){Object.assign(current,values);if(current.cancelRequested&&current.generationId&&!terminal(current)){const stopped=await this.session.request('/generations/'+current.generationId+'/cancel','POST',{},user.id);current.stage=generationStage(stopped);}await this.save(user.id,tasks);}});}finally{this.submitting.delete(task.id);}
     }));
     return this.load(user.id);
   }
@@ -107,10 +122,10 @@ export class GenerationQueue {
     const polled=(await this.load(user.id)).filter(task=>active(task)&&task.generationId).sort((a,b)=>(a.lastCheckedAt||0)-(b.lastCheckedAt||0)).slice(0,12);
     await Promise.all(polled.map(async task=>{
       let values;
-      try{const generation=await this.session.request('/generations/'+task.generationId,'GET',undefined,user.id);const stage=generation.status==='COMPLETED'?'completed':generation.status==='FAILED'?'failed':generation.status==='QUEUED'?'queued':'running';values={stage,lastCheckedAt:Date.now(),...(stage==='failed'?{error:String(generation.errorMessage||'Generation failed.').slice(0,1000)}:{}),...(stage==='completed'?{finishedAt:Date.now()}:{})};}
+      try{let generation=await this.session.request('/generations/'+task.generationId,'GET',undefined,user.id);if(task.cancelRequested&&!['COMPLETED','FAILED','CANCELLED'].includes(generation.status))generation=await this.session.request('/generations/'+task.generationId+'/cancel','POST',{},user.id);const stage=generationStage(generation);values={stage,lastCheckedAt:Date.now(),...(stage==='failed'?{error:String(generation.errorMessage||'Generation failed.').slice(0,1000)}:{}),...(stage==='completed'?{finishedAt:Date.now()}:{})};}
       catch(error){values=[400,403,404].includes(error.status)?{stage:'failed',error:error.message,lastCheckedAt:Date.now()}:{lastCheckedAt:Date.now()};}
       let completed;
-      await this.exclusive(async()=>{const tasks=await this.load(user.id),current=tasks.find(item=>item.id===task.id);if(!current)return;const changed=values.stage&&current.stage!==values.stage;Object.assign(current,values);if(changed){await this.save(user.id,tasks);if(current.stage==='completed')completed={...current};}else await this.store.set({['queue:'+user.id]:tasks});});
+      await this.exclusive(async()=>{const tasks=await this.load(user.id),current=tasks.find(item=>item.id===task.id);if(!current||terminal(current))return;const changed=values.stage&&current.stage!==values.stage;Object.assign(current,values);if(changed){await this.save(user.id,tasks);if(current.stage==='completed')completed={...current};}else await this.store.set({['queue:'+user.id]:tasks});});
       if(completed)await this.completed(user,completed,prefs);
     }));
     await this.dispatch();return this.load(user.id);

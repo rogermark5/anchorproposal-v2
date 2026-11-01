@@ -1,4 +1,6 @@
 'use client';
+import { useTimeZone } from '@/components/time-zone-settings';
+import { formatZonedDate } from '@/lib/time-zone';
 
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
@@ -13,6 +15,7 @@ const kinds = ['setup', 'portable'] as const;
 const packageName = (kind: DesktopPackageKind) => kind === 'setup' ? 'Setup installer' : 'Portable app';
 
 export function DesktopReleaseManager() {
+  useTimeZone();
   const { isMaster } = useAuth();
   const [catalog, setCatalog] = useState<DesktopCatalog | null>(null);
   const [error, setError] = useState('');
@@ -47,7 +50,7 @@ export function DesktopReleaseManager() {
       {busy && <p className={styles.progress} role="status"><LoaderCircle size={17} className={styles.spin}/>{busy}</p>}
       {!catalog.releases.length && <p className={styles.empty}>No releases yet. Create a version, upload its files, then publish it.</p>}
       <div className={styles.releases}>{catalog.releases.map(release => <article key={release.id} className={styles.release} aria-label={`Version ${release.version}`}>
-        <div className={styles.releaseHeader}><h3>Version {release.version}</h3><span className={release.published ? styles.published : styles.draft}>{release.published ? 'Published' : 'Draft / hidden'}</span>{catalog.latestId === release.id && <span className={styles.latest}>Latest</span>}<time>{new Date(release.createdAt).toLocaleDateString()}</time></div>
+        <div className={styles.releaseHeader}><h3>Version {release.version}</h3><span className={release.published ? styles.published : styles.draft}>{release.published ? 'Published' : 'Draft / hidden'}</span>{catalog.latestId === release.id && <span className={styles.latest}>Latest</span>}<time>{formatZonedDate(release.createdAt)}</time></div>
         <div className={styles.files}>{kinds.map(kind => {
           const file = release.downloads[kind]; const uploaded = release.uploaded?.[kind] || Boolean(file);
           return <div key={kind} className={styles.file}><h4>{packageName(kind)}</h4>{file ? <><p>{(file.bytes / 1024 / 1024).toFixed(1)} MB</p><details><summary>SHA-256 checksum</summary><code>{file.sha256}</code></details>{release.published && <a href={`${apiBase}/desktop/releases/${encodeURIComponent(release.id)}/windows/${kind}`}>Download file</a>}</> : <p>{uploaded ? 'File is missing from server storage. Remove it and upload again.' : 'No file uploaded'}</p>}

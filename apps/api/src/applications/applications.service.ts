@@ -1,3 +1,4 @@
+import { profileAccessWhere } from '../common/utils/profile-access';
 import { Injectable, NotFoundException, ForbiddenException, BadRequestException, ConflictException } from '@nestjs/common';
 import { normalizedJobUrl } from './job-url';
 import { bindProfileOutput, hasProfileIdentityConflict, redactPromptMetadata } from '../generations/profile-output';
@@ -5,7 +6,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { ProfilesService } from '../profiles/profiles.service';
 import { RulesService } from '../rules/rules.service';
 import { StorageService } from '../storage/storage.service';
-import { normalizeCompany } from '@anchorproposal/shared';
+import { normalizeCompany, calendarRange, validTimeZone } from '@anchorproposal/shared';
 import {
   ApplicationStatus,
   UserRole,
@@ -27,6 +28,13 @@ export type LatestFiles = {
 
 @Injectable()
 export class ApplicationsService {
+  private async createdRange(query: { from?: string; to?: string; timeZone?: string }, user: AuthUser) {
+    if (query.from === undefined && query.to === undefined) return {};
+    const saved = await this.prisma.systemSetting.findUnique({ where: { key: `time_zone:${user.id}` } });
+    const timeZone = query.timeZone ?? (validTimeZone(saved?.value) ? saved.value : 'UTC');
+    try { return { createdAt: calendarRange(query.from!, query.to!, timeZone) }; }
+    catch { throw new BadRequestException('Choose valid From and To dates and a time zone.'); }
+  }
   constructor(
     private prisma: PrismaService,
     private profilesService: ProfilesService,
@@ -48,14 +56,14 @@ export class ApplicationsService {
       });
       const ownedIds = owned.map((b) => b.id);
       if (listScope === 'mine') {
-        return { bidderId: user.id };
+        return { bidderId: user.id, profile: profileAccessWhere(user) };
       }
       if (listScope === 'team') {
-        return { bidderId: { in: ownedIds } };
+        return { bidderId: { in: ownedIds }, profile: profileAccessWhere(user) };
       }
-      return { bidderId: { in: [user.id, ...ownedIds] } };
+      return { bidderId: { in: [user.id, ...ownedIds] }, profile: profileAccessWhere(user) };
     }
-    return { bidderId: user.id };
+    return { bidderId: user.id, profile: profileAccessWhere(user) };
   }
 
   private async assertCanAccessApp(
@@ -97,12 +105,15 @@ export class ApplicationsService {
       warningState?: string;
       scope?: 'mine' | 'team';
       limit?: number;
+      from?: string;
+      to?: string;
+      timeZone?: string;
     },
   ) {
     const listScope =
       filters.scope === 'mine' || filters.scope === 'team' ? filters.scope : undefined;
     const scope = await this.applicationScopeWhere(user, listScope);
-    const where: Record<string, unknown> = { ...scope };
+    const where: Record<string, unknown> = { ...scope, ...await this.createdRange(filters, user) };
 
     if (filters.status) where.status = filters.status;
     if (filters.profileId) where.profileId = filters.profileId;
@@ -126,10 +137,10 @@ export class ApplicationsService {
           where: { status: GenerationStatus.COMPLETED },
           orderBy: { version: 'desc' },
           take: 1,
-          include: { files: { select: { id: true, type: true, kind: true } } },
+          select: { id: true, structuredOutputJson: true, profileSnapshotJson: true, files: { select: { id: true, type: true, kind: true } } },
         },
       },
-      orderBy: { updatedAt: 'desc' },
+      orderBy: { createdAt: 'desc' },
     });
 
     return apps.map((app) => {
@@ -164,7 +175,8 @@ export class ApplicationsService {
     }
     if (query.status && !Object.values(ApplicationStatus).includes(query.status as ApplicationStatus)) throw new BadRequestException('Choose an application status.');
     const asOf = cursor ? new Date(cursor.asOf) : now;
-    const where: Prisma.ApplicationWhereInput = { AND: [{ bidderId:user.id }, { createdAt: { lte: asOf } },
+    const where: Prisma.ApplicationWhereInput = { AND: [{ bidderId:user.id, profile: profileAccessWhere(user) }, { createdAt: { lte: asOf } },
+      await this.createdRange(query, user),
       ...(query.profileId ? [{profileId:query.profileId.slice(0,100)}] : []),
       ...(query.status ? [{status:query.status as ApplicationStatus}] : []),
       ...(query.q?.trim() ? [{OR:['jobTitle','company','location'].map(field=>({[field]:{contains:query.q!.trim().slice(0,200),mode:'insensitive' as const}}))}] : []),
@@ -300,7 +312,7 @@ export class ApplicationsService {
     const matches: Record<string, { id: string; company: string; jobTitle: string; profileId: string; profileName: string }[]> = Object.create(null);
     if (!wanted.size) return matches;
     const applications = await this.prisma.application.findMany({
-      where: { bidderId: user.id, ...(!isAdmin(user.role) && !isMaster(user.role) ? { profile: { assignments: { some: { userId: user.id, activeTo: null } } } } : {}) },
+      where: { bidderId: user.id, profile: profileAccessWhere(user) },
       select: { id: true, company: true, jobTitle: true, profileId: true, profile: { select: { firstName: true, lastName: true } } }, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
     });
     for (const application of applications) {

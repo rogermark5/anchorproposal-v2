@@ -1,8 +1,8 @@
 import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { UserRole } from '@prisma/client';
 import { AuthUser } from '../common/types/auth.types';
-import { isAdmin, isStaff } from '../common/utils/roles.util';
+import { isStaff } from '../common/utils/roles.util';
+import { profileAccessWhere } from '../common/utils/profile-access';
 import { SettingsService } from '../settings/settings.service';
 
 @Injectable()
@@ -15,7 +15,7 @@ export class ProfilesService {
   async findAll(user: AuthUser) {
     if (isStaff(user.role)) {
       const profiles = await this.prisma.profile.findMany({
-        where: { archivedAt: null },
+        where: { archivedAt: null, ...profileAccessWhere(user) },
         include: {
           _count: { select: { assignments: true, applications: true } },
           assignments: {
@@ -58,7 +58,8 @@ export class ProfilesService {
     });
   }
 
-  async create(data: Record<string, unknown>) {
+  async create(data: Record<string, unknown>, user: AuthUser) {
+    if (!isStaff(user.role)) throw new ForbiddenException();
     const { experiences, education, skills, certifications, links, ...profileData } = data as {
       experiences?: unknown[];
       education?: unknown[];
@@ -70,7 +71,8 @@ export class ProfilesService {
 
     return this.prisma.profile.create({
       data: {
-        ...(profileData as object),
+        ...this.editableData(profileData),
+        ownerId: user.id,
         experiences: experiences ? { create: experiences as never[] } : undefined,
         education: education ? { create: education as never[] } : undefined,
         skills: skills ? { create: skills as never[] } : undefined,
@@ -87,7 +89,9 @@ export class ProfilesService {
     });
   }
 
-  async update(id: string, data: Record<string, unknown>) {
+  async update(id: string, data: Record<string, unknown>, user: AuthUser) {
+    if (!isStaff(user.role)) throw new ForbiddenException();
+    await this.checkAccess(id, user);
     const { experiences, education, skills, certifications, links, ...profileData } = data as {
       experiences?: unknown[];
       education?: unknown[];
@@ -100,7 +104,7 @@ export class ProfilesService {
     return this.prisma.profile.update({
       where: { id },
       data: {
-        ...(profileData as object),
+        ...this.editableData(profileData),
         experiences: experiences ? { deleteMany: {}, create: this.copyRows(experiences) } : undefined,
         education: education ? { deleteMany: {}, create: this.copyRows(education) } : undefined,
         skills: skills ? { deleteMany: {}, create: this.copyRows(skills) } : undefined,
@@ -117,11 +121,19 @@ export class ProfilesService {
     });
   }
 
-  async archive(id: string) {
+  async archive(id: string, user: AuthUser) {
+    if (!isStaff(user.role)) throw new ForbiddenException();
+    await this.checkAccess(id, user);
     return this.prisma.profile.update({
       where: { id },
       data: { archivedAt: new Date() },
     });
+  }
+
+  private editableData(data: Record<string, unknown>) {
+    const fields = ['firstName', 'lastName', 'email', 'phone', 'address', 'city', 'state', 'country',
+      'profileTitle', 'summary', 'workAuthorization', 'remoteOnly', 'preferredRoles', 'defaultTemplateId', 'promptVersionId'];
+    return Object.fromEntries(fields.filter(key => data[key] !== undefined).map(key => [key, data[key]]));
   }
 
   private copyRows(rows: unknown[]): never[] {
@@ -131,8 +143,9 @@ export class ProfilesService {
     }) as never[];
   }
 
-  async clone(id: string) {
-    const original = await this.findOne(id, { id: '', email: '', role: UserRole.ADMIN, firstName: '', lastName: '' });
+  async clone(id: string, user: AuthUser) {
+    if (!isStaff(user.role)) throw new ForbiddenException();
+    const original = await this.findOne(id, user);
     if (!original) throw new NotFoundException('Profile not found');
 
     const { id: _id, createdAt, updatedAt, archivedAt, ...data } = original;
@@ -144,20 +157,20 @@ export class ProfilesService {
       skills: this.copyRows(original.skills),
       certifications: this.copyRows(original.certifications),
       links: this.copyRows(original.links),
-    });
+    }, user);
   }
 
-  async getAssignedProfiles(userId: string) {
+  async getAssignedProfiles(user: AuthUser) {
     const assignments = await this.prisma.profileAssignment.findMany({
-      where: { userId, activeTo: null },
+      where: { userId: user.id, activeTo: null, profile: { archivedAt: null, ...profileAccessWhere(user) } },
       include: { profile: true },
     });
     return assignments;
   }
 
-  async getDefaultProfile(userId: string) {
+  async getDefaultProfile(user: AuthUser) {
     const assignment = await this.prisma.profileAssignment.findFirst({
-      where: { userId, isDefault: true, activeTo: null },
+      where: { userId: user.id, isDefault: true, activeTo: null, profile: { archivedAt: null, ...profileAccessWhere(user) } },
       include: { profile: true },
     });
     return assignment?.profile || null;
@@ -195,12 +208,10 @@ export class ProfilesService {
   }
 
   async checkAccess(profileId: string, user: AuthUser) {
-    if (isStaff(user.role)) return;
-
-    const assignment = await this.prisma.profileAssignment.findFirst({
-      where: { userId: user.id, profileId, activeTo: null },
+    const profile = await this.prisma.profile.findFirst({
+      where: { id: profileId, ...profileAccessWhere(user) }, select: { id: true },
     });
-    if (!assignment) throw new ForbiddenException('Profile not assigned to you');
+    if (!profile) throw new ForbiddenException('Profile is not owned by or assigned to you');
   }
 
   async getProfilePromptAssignments(profileId: string, actor: AuthUser) {

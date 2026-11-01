@@ -42,6 +42,9 @@ function apiRequest(route, method = 'GET') {
   apiPath(route);
   const pathname = route.split('?')[0];
   const rules = [
+    [/^\/settings\/time-zone$/, ['GET', 'PATCH']],
+    [/^\/generations\/[\w-]+\/cancel$/, ['POST']],
+    [/^\/generations\/[\w-]+\/answers\/requests(?:\/[\w-]+)?$/, ['GET', 'POST']],
     [/^\/settings\/generation-workflow$/, ['GET']],
     [/^\/settings\/document-display$/, ['PATCH']],
     [/^\/profiles\/[\w-]+\/generation-preference$/, ['GET', 'PUT']],

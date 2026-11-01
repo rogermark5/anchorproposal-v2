@@ -6,6 +6,7 @@ import { DeepseekService } from '../deepseek/deepseek.service';
 import { GenerationStatus } from '@prisma/client';
 import type { GenerationOutput } from '@anchorproposal/shared';
 import { parseExperienceTitleMode } from './experience-title-mode';
+import { GenerationCancelled } from './generation-cancelled';
 
 @Processor('resume-generation', { concurrency: 3 })
 export class GenerationProcessor extends WorkerHost {
@@ -19,8 +20,11 @@ export class GenerationProcessor extends WorkerHost {
 
   async process(job: Job<{ generationId: string; applicationId: string }>) {
     const { generationId } = job.data;
-
+    const initial = await this.prisma.resumeGeneration.findUnique({ where: { id: generationId }, select: { status: true } });
+    if (!initial || ['COMPLETED', 'FAILED', 'CANCELLED'].includes(initial.status)) return;
+    return this.generationsService.withCancellation(generationId, async signal => {
     try {
+      signal.throwIfAborted();
       await this.generationsService.updateStatus(generationId, GenerationStatus.VALIDATING);
 
       const generation = await this.prisma.resumeGeneration.findUnique({
@@ -65,8 +69,9 @@ export class GenerationProcessor extends WorkerHost {
           company: generation.application.company, jobDescription: generation.application.jobDescription,
           documentKind: 'cover-letter',
         }) : undefined,
-      });
+      }, { signal, onProgress: () => {} });
       const output = content as GenerationOutput;
+      signal.throwIfAborted();
 
       const existingTurns = await this.prisma.generationTurn.count({
         where: { generationId, purpose: 'resume_assistant' },
@@ -103,11 +108,14 @@ export class GenerationProcessor extends WorkerHost {
         },
       });
     } catch (error) {
+      const state = await this.prisma.resumeGeneration.findUnique({ where: { id: generationId }, select: { status: true } });
+      if (state?.status === GenerationStatus.COMPLETED || state?.status === GenerationStatus.CANCELLED || error instanceof GenerationCancelled) return;
       const message = error instanceof Error ? error.message : 'Unknown error';
       await this.generationsService.updateStatus(generationId, GenerationStatus.FAILED, {
         errorMessage: message,
       });
       throw error;
     }
+    });
   }
 }

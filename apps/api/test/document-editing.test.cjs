@@ -24,7 +24,7 @@ function fixture(){
  prisma.$transaction=fn=>fn(prisma);
  const capture=kind=>async(_a,_g,data,fourth,fifth,[type])=>{const config=kind==='RESUME'?fourth:fifth;rendered.push({kind,data,config,type});return[{kind,type,filename:'fixture.'+type.toLowerCase(),storagePath:'qa-only'}];};
  const renderer={renderAll:capture('RESUME'),renderCoverLetter:capture('COVER_LETTER')};
- const service=new GenerationsService(prisma,{checkAccess:async()=>{}},{},{getDocumentDisplay:async id=>{assert.equal(id,'owner');return{showJobTitle};}},new TemplatesService({}),renderer,{add(){throw Error('Must not queue AI');}},{generate(){throw Error('Must not call AI');}});
+ const service=new GenerationsService(prisma,{checkAccess:async()=>{}},{},{getTimeZone:async()=>({timeZone:'UTC'}),getDocumentDisplay:async id=>{assert.equal(id,'owner');return{showJobTitle};}},new TemplatesService({}),renderer,{add(){throw Error('Must not queue AI');}},{generate(){throw Error('Must not call AI');}});
  return{service,original,records,rendered,audits,deny(){allowed=false;},hide(){showJobTitle=false;}};
 }
 test('response JSON skills survive profile binding, manual import and rendering',()=>{

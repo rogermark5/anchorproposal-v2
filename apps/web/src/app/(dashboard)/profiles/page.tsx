@@ -184,7 +184,7 @@ interface Profile {
 }
 
 export default function ProfilesPage() {
-  const { isAdmin, canBid } = useAuth();
+  const { isMaster, isAdmin, canBid } = useAuth();
   const router = useRouter();
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [search, setSearch] = useState('');
@@ -280,7 +280,7 @@ export default function ProfilesPage() {
       <div className="flex items-center justify-between mb-8">
         <div>
           <h1 className="text-2xl font-semibold text-slate-800 tracking-tight">Profiles</h1>
-          <p className="text-slate-500 mt-1">Manage candidate profiles</p>
+          <p className="text-slate-500 mt-1">{isMaster ? 'Manage candidate profiles' : isAdmin ? 'Your profiles and additional profiles assigned by Master' : 'Profiles assigned to you'}</p>
         </div>
         {isAdmin && (
           <Link

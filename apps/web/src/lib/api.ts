@@ -1,5 +1,6 @@
 import { desktopBridge } from './desktop-bridge';
 import { downloadFilename } from './download-filename';
+import { ApiRequestError, fetchWithRecovery, responseJson } from '@anchorproposal/shared';
 const API_URL = process.env.NEXT_PUBLIC_API_URL || '/backend';
 
 export type ExperienceTitleMode = 'saved' | 'tailored';
@@ -113,32 +114,49 @@ class ApiClient {
   }
 
   getAccessToken() {
+    this.syncStoredTokens();
     return this.accessToken;
+  }
+
+  private syncStoredTokens() {
+    if (typeof window === 'undefined' || desktopBridge()) return;
+    const access = localStorage.getItem('accessToken'), refresh = localStorage.getItem('refreshToken');
+    if (access !== this.accessToken || refresh !== this.refreshToken) {
+      this.invalidateCache(); this.accessToken = access; this.refreshToken = refresh;
+    }
   }
 
   private refreshSession(): Promise<void> {
     if (this.refreshPromise) return this.refreshPromise;
-    const token = this.refreshToken;
-    this.refreshPromise = (async () => {
-      const response = await fetch(`${API_URL}/auth/refresh`, {
+    const usedAccess = this.accessToken;
+    const refresh = async () => {
+      this.syncStoredTokens();
+      if (this.accessToken !== usedAccess) return;
+      const token = this.refreshToken;
+      const response = await fetchWithRecovery(`${API_URL}/auth/refresh`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true' },
         body: JSON.stringify({ refreshToken: token }),
-      });
+      }, { fetcher: fetch });
       // A logout or a new login while this request was pending wins.
       if (this.refreshToken !== token) return;
-      if (!response.ok) {
+      if ([400, 401, 403].includes(response.status)) {
         this.clearTokens();
         if (typeof window !== 'undefined') window.location.href = '/login';
         throw new Error('Session expired');
       }
-      const tokens = await this.parseJson<{ accessToken: string; refreshToken: string }>(response);
+      const tokens = await responseJson<{ accessToken: string; refreshToken: string }>(response);
+      if (!tokens.accessToken || !tokens.refreshToken) throw new ApiRequestError('The server returned an invalid session. Please try again.');
       if (this.refreshToken === token) this.setTokens(tokens.accessToken, tokens.refreshToken);
-    })().finally(() => { this.refreshPromise = null; });
+    };
+    // Serialize refresh-token rotation across tabs as well as concurrent requests.
+    const locks = typeof navigator !== 'undefined' ? navigator.locks : undefined;
+    this.refreshPromise = (locks ? locks.request('anchorproposal-session-refresh', refresh) : refresh()).then(() => undefined).finally(() => { this.refreshPromise = null; });
     return this.refreshPromise;
   }
 
   private async request<T>(path: string, options: RequestInit = {}): Promise<T> {
+    this.syncStoredTokens();
     const method = options.method || 'GET';
     const cacheable = method === 'GET' && /^\/(profiles(?:\?|$)|templates(?:\?|$)|users(?:\?|$)|settings\/|dashboard\/|applications(?:\?|$))/.test(path) && !/preview/.test(path);
     if (method !== 'GET' && path !== '/applications/validate') this.invalidateCache();
@@ -179,11 +197,12 @@ class ApiClient {
     if (this.accessToken) headers.Authorization = `Bearer ${this.accessToken}`;
 
     const doFetch = (init?: RequestInit) =>
-      fetch(`${API_URL}${path}`, {
+      fetchWithRecovery(`${API_URL}${path}`, {
         ...options,
         ...init,
         headers: { ...headers, ...(init?.headers as Record<string, string> | undefined) },
-      });
+      }, { fetcher: fetch, timeoutMs: /\/answers(?:\/prompt)?$|\/export$|\/edits$|\/draft-preview$/.test(path) ? 240_000 : 30_000,
+        idempotent: options.method === 'POST' && (/\/cancel$/.test(path) || typeof options.body === 'string' && !!JSON.parse(options.body).idempotencyKey) });
 
     let res = await doFetch();
 
@@ -195,13 +214,7 @@ class ApiClient {
       res = await doFetch();
     }
 
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({ message: 'Request failed' }));
-      throw new Error(Array.isArray(err.message) ? err.message[0] : err.message);
-    }
-
-    if (res.status === 204) return {} as T;
-    return this.parseJson<T>(res);
+    return responseJson<T>(res);
   }
 
   private async parseJson<T>(res: Response): Promise<T> {
@@ -262,6 +275,9 @@ class ApiClient {
   getMe() {
     return this.request<User>('/auth/me');
   }
+
+  getTimeZone() { return this.request<{ timeZone: string | null }>('/settings/time-zone'); }
+  setTimeZone(timeZone: string) { return this.request<{ timeZone: string }>('/settings/time-zone', { method: 'PATCH', body: JSON.stringify({ timeZone }) }); }
 
   getDesktopReleases() { return this.request<DesktopCatalog>('/desktop/manage/releases'); }
   createDesktopRelease(version: string, notes: string) {
@@ -580,9 +596,11 @@ class ApiClient {
   startGeneration(applicationId: string, templateId?: string) {
     return this.request(`/applications/${applicationId}/generations`, {
       method: 'POST',
-      body: JSON.stringify({ templateId }),
+      body: JSON.stringify({ templateId, idempotencyKey: crypto.randomUUID() }),
     });
   }
+
+  cancelGeneration(id: string) { return this.request<Record<string, unknown>>(`/generations/${id}/cancel`, { method: 'POST' }); }
 
   getManualGenerationPrompt(applicationId: string, templateId?: string) {
     const query = templateId ? `?templateId=${encodeURIComponent(templateId)}` : '';
@@ -650,6 +668,7 @@ class ApiClient {
       primed: boolean;
       ack: string | null;
       items: { question: string; answer: string }[];
+      pending?: { id: string; question: string; status: string } | null;
     }>(`/generations/${generationId}/answers`);
   }
 
@@ -670,6 +689,16 @@ class ApiClient {
       method: 'POST',
       body: JSON.stringify({ question }),
     });
+  }
+
+  submitAnswer(generationId: string, question: string, idempotencyKey: string) {
+    return this.request<{ id: string; status: string }>(`/generations/${generationId}/answers/requests`, {
+      method: 'POST', body: JSON.stringify({ question, idempotencyKey }),
+    });
+  }
+
+  getAnswerRequest(generationId: string, requestId: string) {
+    return this.request<{ status: string; errorMessage?: string; view?: { primed: boolean; items: { question: string; answer: string }[] } }>(`/generations/${generationId}/answers/requests/${requestId}`);
   }
 
   exportGenerationFile(

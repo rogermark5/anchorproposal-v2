@@ -1,8 +1,10 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, BadRequestException } from '@nestjs/common';
+import { calendarDay, calendarDayStart, calendarRange, shiftCalendarDay, validCalendarDay, validTimeZone } from '@anchorproposal/shared';
 import { PrismaService } from '../prisma/prisma.service';
 import { ApplicationStatus, GenerationStatus, UserRole, Prisma } from '@prisma/client';
 import { AuthUser } from '../common/types/auth.types';
 import { isAdmin, isMaster } from '../common/utils/roles.util';
+import { profileAccessWhere } from '../common/utils/profile-access';
 
 export type DashboardMetricsFilters = {
   adminIds?: string[];
@@ -10,6 +12,7 @@ export type DashboardMetricsFilters = {
   statuses?: ApplicationStatus[];
   startDate?: string;
   endDate?: string;
+  timeZone?: string;
 };
 
 const DEFAULT_TREND_STATUSES: ApplicationStatus[] = [
@@ -46,9 +49,9 @@ export class DashboardService {
     if (isMaster(user.role)) return {};
     if (isAdmin(user.role)) {
       const owned = await this.ownedBidderIds(user.id);
-      return { bidderId: { in: [user.id, ...owned] } };
+      return { bidderId: { in: [user.id, ...owned] }, profile: profileAccessWhere(user) };
     }
-    return { bidderId: user.id };
+    return { bidderId: user.id, profile: profileAccessWhere(user) };
   }
 
   private async ownedBidderIds(adminId: string): Promise<string[]> {
@@ -116,6 +119,7 @@ export class DashboardService {
         ? this.prisma.application.count({
             where: {
               bidderId,
+              ...(dateStatusOnly.profile ? { profile: dateStatusOnly.profile } : {}),
               ...(dateStatusOnly.createdAt ? { createdAt: dateStatusOnly.createdAt } : {}),
               status: ApplicationStatus.INTERVIEW,
             },
@@ -125,6 +129,7 @@ export class DashboardService {
         ? this.prisma.application.count({
             where: {
               bidderId,
+              ...(dateStatusOnly.profile ? { profile: dateStatusOnly.profile } : {}),
               ...(dateStatusOnly.createdAt ? { createdAt: dateStatusOnly.createdAt } : {}),
               status: ApplicationStatus.OFFER,
             },
@@ -155,10 +160,10 @@ export class DashboardService {
     if (applyDates && (filters.startDate || filters.endDate)) {
       where.createdAt = {};
       if (filters.startDate) {
-        (where.createdAt as Prisma.DateTimeFilter).gte = parseDay(filters.startDate);
+        (where.createdAt as Prisma.DateTimeFilter).gte = calendarDayStart(filters.startDate, filters.timeZone || 'UTC');
       }
       if (filters.endDate) {
-        (where.createdAt as Prisma.DateTimeFilter).lte = endOfDay(filters.endDate);
+        (where.createdAt as Prisma.DateTimeFilter).lt = calendarDayStart(shiftCalendarDay(filters.endDate, 1), filters.timeZone || 'UTC');
       }
     }
 
@@ -166,8 +171,7 @@ export class DashboardService {
   }
 
   private resolveTrendWindow(filters: DashboardMetricsFilters): { start: Date; end: Date; days: number } {
-    const today = new Date();
-    today.setUTCHours(0, 0, 0, 0);
+    const today = parseDay(calendarDay(new Date(), filters.timeZone || 'UTC'));
 
     let end = filters.endDate ? parseDay(filters.endDate) : today;
     let start = filters.startDate
@@ -197,6 +201,9 @@ export class DashboardService {
   }
 
   async getMetrics(user: AuthUser, filters: DashboardMetricsFilters = {}) {
+    const saved = await this.prisma.systemSetting.findUnique({ where: { key: `time_zone:${user.id}` } });
+    filters = { ...filters, timeZone: validTimeZone(saved?.value) ? saved.value : 'UTC' };
+    if (filters.startDate && !validCalendarDay(filters.startDate) || filters.endDate && !validCalendarDay(filters.endDate) || filters.startDate && filters.endDate && filters.startDate > filters.endDate) throw new BadRequestException('Choose a valid date range.');
     const roleWhere = await this.appWhere(user);
     const bidderIds = await this.resolveBidderIds(user, filters);
     // Overview KPIs ignore analytics status chips — always count true pipeline volumes
@@ -231,7 +238,7 @@ export class DashboardService {
       applyStatus: false,
       applyDates: false,
     });
-    trendWhere.createdAt = { gte: start, lte: endOfDay(toDateStr(end)) };
+    trendWhere.createdAt = calendarRange(toDateStr(start), toDateStr(end), filters.timeZone!);
 
     const recentApps = await this.prisma.application.findMany({
       where: trendWhere,
@@ -241,7 +248,7 @@ export class DashboardService {
     const trend = Array.from({ length: days }, (_, i) => {
       const date = new Date(start.getTime() + i * 24 * 60 * 60 * 1000);
       const dateStr = toDateStr(date);
-      const dayApps = recentApps.filter((a) => toDateStr(a.createdAt) === dateStr);
+      const dayApps = recentApps.filter((a) => calendarDay(a.createdAt, filters.timeZone!) === dateStr);
       const point: Record<string, string | number> = { date: dateStr };
       for (const status of trendStatuses) {
         point[statusKey(status)] = dayApps.filter((a) => a.status === status).length;
@@ -399,6 +406,7 @@ export class DashboardService {
       };
     } else if (isAdmin(user.role)) {
       const dateStatusOnly = this.tableDateStatusOnly(filters);
+      dateStatusOnly.profile = profileAccessWhere(user);
       const ownedIds = await this.ownedBidderIds(user.id);
       const allowedIds = [user.id, ...ownedIds];
       const selectedIds = filters.bidderIds?.length

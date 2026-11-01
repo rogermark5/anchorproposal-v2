@@ -1,4 +1,5 @@
 'use client';
+import { useTimeZone } from '@/components/time-zone-settings';
 
 
 import { useEffect, useState } from 'react';
@@ -6,6 +7,7 @@ import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { toast } from 'sonner';
 import { api } from '@/lib/api';
+import { useAuth } from '@/lib/auth-context';
 import { GenerationPreviewDialog } from '@/components/generation-preview-dialog';
 import { ArrowLeft, AlertTriangle, Sparkles } from 'lucide-react';
 import { DefaultPromptWarning } from '@/components/default-prompt-warning';
@@ -66,6 +68,8 @@ function AnswersTab({
 }
 
 export default function ApplicationDetailPage() {
+  useTimeZone();
+  const { user } = useAuth();
   const { id } = useParams<{ id: string }>();
   const [app, setApp] = useState<Record<string, unknown> | null>(null);
   const [tab, setTab] = useState<Tab>('overview');
@@ -78,6 +82,14 @@ export default function ApplicationDetailPage() {
   );
   const [answerGenerationId, setAnswerGenerationId] = useState('');
   const [previewId, setPreviewId] = useState<string | null>(null);
+  const [activeGenerationId, setActiveGenerationId] = useState<string | null>(null);
+  const [cancelling, setCancelling] = useState(false);
+  const cancelGeneration = async (generationId: string) => {
+    setCancelling(true);
+    try { await api.cancelGeneration(generationId); await load(); toast.message('Cancellation requested.'); }
+    catch (error) { toast.error(error instanceof Error ? error.message : 'Could not cancel generation.'); }
+    finally { setCancelling(false); }
+  };
 
   const load = () => api.getApplication(id).then(setApp).catch(console.error);
   useEffect(() => {
@@ -102,6 +114,8 @@ export default function ApplicationDetailPage() {
         status: string;
       };
       setTab('history');
+      setActiveGenerationId(started.id);
+      await load();
       toast.message('Generation started…');
 
       const terminal = await pollGeneration(started.id);
@@ -113,11 +127,14 @@ export default function ApplicationDetailPage() {
         setPreviewId(started.id);
       } else if (terminal.status === 'FAILED') {
         toast.error(terminal.errorMessage || 'Generation failed');
+      } else if (terminal.status === 'CANCELLED') {
+        toast.message('Generation cancelled. Your application is saved.');
       }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Generation failed');
     } finally {
       setGenerating(false);
+      setActiveGenerationId(null);
     }
   };
 
@@ -144,7 +161,7 @@ export default function ApplicationDetailPage() {
       try {
         const gen = await api.getGeneration(generationId);
         const status = gen.status as string;
-        if (status === 'COMPLETED' || status === 'FAILED') {
+        if (status === 'COMPLETED' || status === 'FAILED' || status === 'CANCELLED') {
           return {
             status,
             errorMessage: (gen.errorMessage as string | null | undefined) || null,
@@ -154,7 +171,7 @@ export default function ApplicationDetailPage() {
         /* keep polling */
       }
     }
-    return { status: 'FAILED', errorMessage: 'Generation timed out — check History for status' };
+    return { status: 'PENDING', errorMessage: 'Still processing. Check History before starting another generation.' };
   };
 
   const handleAddNote = async () => {
@@ -243,6 +260,7 @@ export default function ApplicationDetailPage() {
           <Link href={`/applications/${id}/resume`} className="px-4 py-2 border border-slate-300 rounded-lg text-sm font-medium text-slate-700 hover:bg-slate-50">
             View Resume
           </Link>
+          {(activeGenerationId || generations.find(gen => gen.creatorId === user?.id && ['QUEUED', 'VALIDATING', 'GENERATING'].includes(gen.status as string))) && <button type="button" disabled={cancelling} className="btn-secondary" onClick={() => void cancelGeneration(activeGenerationId || generations.find(gen => gen.creatorId === user?.id && ['QUEUED','VALIDATING','GENERATING'].includes(gen.status as string))!.id as string)}>{cancelling ? 'Cancelling…' : 'Cancel generation'}</button>}
         </div>
       </div>
 
