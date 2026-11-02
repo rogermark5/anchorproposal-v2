@@ -83,8 +83,8 @@ export class TemplatesService {
         },
       ],
       certificates: [
-        { name: 'Certified Scrum Product Owner (CSPO)', issuer: 'Scrum Alliance', date: '2022' },
-        { name: 'Google Analytics Individual Qualification', issuer: 'Google', date: '2023' },
+        { name: 'Certified Scrum Product Owner (CSPO)', issuer: 'Scrum Alliance', issueDate: 'Mar 2022', expirationDate: 'Mar 2024' },
+        { name: 'Google Analytics Individual Qualification', issuer: 'Google', issueDate: 'Jun 2023', expirationDate: 'Jun 2025' },
       ],
       headline:'Product leader building dependable platforms and exceptional customer experiences.',
       coreExpertise:['Product strategy','Cross-functional leadership','Platform delivery','Customer research'],

@@ -47,6 +47,10 @@ Watch for:
 
 ## Troubleshooting
 
+### Optional Jobright browser worker
+
+See [Ubuntu setup and operation](apps/jobright-bot/README.md). Deploy the matching API/web first, then configure a limited worker key and run the separate `anchor-jobright-bot` PM2 process as the Ubuntu desktop user. Master controls its visible login, background scans, search pages and URL exclusions from Job pool. The source posting cutoff persists across worker/API restarts; Stop followed by Start resets it. No bot-specific database migration is required. Keep `.env` and the Chrome session under `.data` private. Missing original links or source timestamps are skipped rather than replaced with Jobright/import values.
+
 ### US, UK and Ireland Job Pool upgrade
 
 This upgrade needs a server deployment, including migrations `20261018010000_job_pool_country_eligibility`, `20261018020000_ten_thousand_job_sources`, `20261018030000_country_source_targets` and `20261018040000_thirty_thousand_distinct_sources`. Preserve the production environment and PM2 configuration and back up the database, documents and desktop release files before deploying the merged code. Confirm that the migration URL matches the running API's database. Run `pnpm install --frozen-lockfile --prod=false`, `pnpm db:generate`, `pnpm db:migrate` and `pnpm build`, then restart `anchor-api` and `anchor-web` and save the PM2 list. Do not seed or reset the production database.

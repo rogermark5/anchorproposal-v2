@@ -6,3 +6,4 @@ export * from './ai-text';
 export * from './time-zone';
 export * from './http';
 export * from './template-design';
+export * from './jobright';

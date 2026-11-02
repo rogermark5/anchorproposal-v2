@@ -13,6 +13,7 @@ const routes = [
   [/^\/auth\/change-password$/, ['PATCH']],
   [/^\/job-pool$/, ['GET','POST']], [/^\/job-pool\/updates$/, ['GET']],
   [/^\/job-pool\/manage$/, ['GET','PATCH']], [/^\/job-pool\/sync$/, ['POST']],
+  [/^\/job-pool\/jobright-bot$/, ['GET','PATCH']], [/^\/job-pool\/jobright-bot\/(key|command)$/, ['POST']],
   [/^\/job-pool\/sources$/, ['POST']], [/^\/job-pool\/sources\/[\w-]+$/, ['PATCH']],
   [/^\/job-pool\/jobs\/[\w-]+$/, ['GET','PATCH']],
   [/^\/job-pool\/jobs\/[\w-]+\/apply$/, ['POST']], [/^\/job-pool\/jobs\/[\w-]+\/(applied|viewed)$/, ['PATCH']],

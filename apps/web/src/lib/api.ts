@@ -1,6 +1,7 @@
 import { desktopBridge } from './desktop-bridge';
 import { downloadFilename } from './download-filename';
 import { ApiRequestError, fetchWithRecovery, responseJson } from '@anchorproposal/shared';
+import type { JobrightSettings, JobrightStatus } from '@anchorproposal/shared';
 const API_URL = process.env.NEXT_PUBLIC_API_URL || '/backend';
 
 export type ExperienceTitleMode = 'saved' | 'tailored';
@@ -941,6 +942,10 @@ class ApiClient {
   markPoolJobViewed(id: string) { return this.request<{ viewed: true; viewedAt: string }>(`/job-pool/jobs/${id}/viewed`, { method: 'PATCH', body: '{}' }); }
   getPoolJob(id: string) { return this.request<PoolJob>(`/job-pool/jobs/${id}`); }
   getPoolManagement() { return this.request<PoolManagement>('/job-pool/manage'); }
+  getJobrightBot() { return this.request<JobrightStatus>('/job-pool/jobright-bot'); }
+  saveJobrightBot(data: JobrightSettings) { return this.request<JobrightStatus>('/job-pool/jobright-bot', { method: 'PATCH', body: JSON.stringify(data) }); }
+  jobrightBotCommand(action: 'start' | 'stop' | 'login' | 'finish-login') { return this.request<JobrightStatus>('/job-pool/jobright-bot/command', { method: 'POST', body: JSON.stringify({ action }) }); }
+  generateJobrightBotKey() { return this.request<{ key: string; status: JobrightStatus }>('/job-pool/jobright-bot/key', { method: 'POST', body: '{}' }); }
   getPoolSummary() { return this.request<Omit<PoolManagement,'sources'>>('/job-pool/manage?summary=1'); }
   updatePoolSettings(data: Partial<PoolManagement['settings']>) { return this.request<PoolManagement['settings']>('/job-pool/manage', { method: 'PATCH', body: JSON.stringify(data) }); }
   addPoolSource(data: { provider: string; name: string; boardToken: string }) { return this.request('/job-pool/sources', { method: 'POST', body: JSON.stringify(data) }); }

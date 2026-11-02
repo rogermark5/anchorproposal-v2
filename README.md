@@ -230,6 +230,10 @@ For source posting times and editable title keywords, `pnpm --filter @anchorprop
 
 The additive migration `20261018070000_job_pool_import_batches` adds first-addition group IDs without changing existing job IDs, viewed/applied marks or source settings. Existing jobs are not retroactively labelled New. Only committed new additions advance the group, including manually published jobs. `node test/job-pool-import-batches.cjs` checks concurrent services, rotation, empty runs, refreshes, rollback and private history in an isolated local schema.
 
+## Optional Jobright bot
+
+The Master job-pool panel can control a separate Ubuntu browser worker: configure Jobright search pages, exclude domains/URL words, sign in visibly and continue hidden. Only source postings after the saved watch start can be imported, with original off-Jobright links and the existing pool rules. See the [Ubuntu installation, login and operating guide](apps/jobright-bot/README.md). The worker is optional and adds no database migration.
+
 ## Chrome extension
 
 Run `pnpm build:extension` for the Manifest V3 extension. Each browser tab opens its own new application form, with independent drafts and up to three concurrent generations. Completed jobs show resume and cover-letter previews, automatic PDF/Word downloads and Get answers. The gear button saves profile, template and download defaults. The advanced workspace remains available internally. **Apps & extensions** opens `/download`, with the Chrome ZIP and installation/update guide at `/download#chrome-extension`. Web build/dev scripts generate the public ZIP and version/size/checksum metadata automatically; generated binaries stay out of Git. Load the ZIP unpacked through Chrome Developer mode, keeping the same installation folder when updating; see [installation, permissions and update instructions](apps/extension/README.md). Deploy the matching API for three concurrent server generations. The focused-panel update adds no database migration; apply the earlier profile-marks migration if it has not been deployed.

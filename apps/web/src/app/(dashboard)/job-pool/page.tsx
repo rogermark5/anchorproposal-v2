@@ -12,6 +12,7 @@ import { JobSiteLogo } from '@/components/job-site-logo';
 import { desktopBridge } from '@/lib/desktop-bridge';
 import { formatZonedDateTime } from '@/lib/time-zone';
 import { ProfileDuplicationFilter } from '@/components/profile-duplication-filter';
+import { JobrightBotSettings } from '@/components/jobright-bot-settings';
 
 const field = 'w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30';
 const button = 'inline-flex items-center justify-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50';
@@ -339,6 +340,7 @@ export default function JobPoolPage() {
       await Promise.all([loadManagement(), load(true)]);
     }} />}
 
+    {isMaster && <JobrightBotSettings />}
     <section className="rounded-xl border border-[var(--border)] bg-white" aria-label="Available jobs">
       {updates && updates.newCount > 0 && <div role="status" className="fixed bottom-5 left-4 right-4 z-40 mx-auto flex max-w-2xl flex-wrap items-center justify-between gap-3 rounded-xl border border-primary/30 bg-white px-5 py-3 text-sm text-primary-deep shadow-lg"><span>{updates.newCount.toLocaleString()} new matching {updates.groupedByCompany ? 'companies discovered' : 'jobs imported'}.</span><button className={button} onClick={refresh}>Refresh job list</button></div>}
       <div role="search" aria-label="Filter jobs" className={'grid grid-cols-2 items-end gap-3 rounded-t-xl border-b border-slate-200 bg-slate-50/70 px-4 py-3 sm:grid-cols-4 ' + (isMaster ? 'xl:grid-cols-[minmax(200px,2fr)_minmax(110px,0.8fr)_minmax(130px,1fr)_minmax(150px,1fr)_minmax(160px,1fr)_minmax(110px,0.8fr)]' : 'xl:grid-cols-[minmax(200px,2fr)_minmax(110px,0.8fr)_minmax(130px,1fr)_minmax(150px,1fr)_minmax(160px,1fr)]')}>

@@ -9,6 +9,7 @@ import {
   experienceTitle,
   experienceCompany,
   experienceDates,
+  certificateDates,
   type TemplateConfig,
   type PromptResumeContent,
   type ElementDesign,
@@ -69,7 +70,7 @@ export function entryPieces(
             ? {
                 name: plainText(row.name || row.title),
                 issuer: plainText(row.issuer || row.organization),
-                date: plainText(row.date || row.dates || row.issueDate),
+                date: certificateDates(row),
               }
             : {
                 name: plainText(row.name || row.title),

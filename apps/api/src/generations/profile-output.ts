@@ -1,4 +1,4 @@
-import { plainText, type GenerationOutput } from '@anchorproposal/shared';
+import { certificateDates, plainText, type GenerationOutput } from '@anchorproposal/shared';
 import { usableCoverLetter } from '../deepseek/cover-letter';
 import { resumeHeadline } from '../common/utils/resume-headline';
 
@@ -51,9 +51,9 @@ export function bindProfileOutput(output: GenerationOutput, snapshot: unknown, u
       institution: plainText(row.institution || row.school || row.university), degree: plainText(row.degree || row.major),
       dates: plainText(row.dates) || [row.startDate, row.endDate].map(plainText).filter(Boolean).join(' – '),
     })) : [],
-    certificates: userEdited ? output.certificates : Array.isArray(profile.certifications || profile.certificates) ? (profile.certifications || profile.certificates).map((row: any, index: number) => ({
-      ...(output.certificates?.[index] || {}), ...row,
-      name: plainText(row.name || row.title), issuer: plainText(row.issuer || row.organization), date: plainText(row.issueDate || row.date),
+    certificates: userEdited ? output.certificates : Array.isArray(profile.certifications || profile.certificates) ? (profile.certifications || profile.certificates).map((row: any) => ({
+      ...row,
+      name: plainText(row.name || row.title), issuer: plainText(row.issuer || row.organization), date: certificateDates(row),
     })) : [],
     coverLetter: usableCoverLetter(output.coverLetter, name),
   };

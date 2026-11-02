@@ -38,6 +38,16 @@ test('application date filters reach the database with account zone and keep emp
  assert.deepEqual(results,[]);assert.equal(where.bidderId,'owner');assert.equal(where.createdAt.gte.toISOString(),'2026-11-01T07:00:00.000Z');assert.equal(where.createdAt.lt.toISOString(),'2026-11-02T08:00:00.000Z');
  await assert.rejects(service.findAll({id:'owner',role:'BIDDER'},{from:'2026-10-31',to:'2026-10-30'}),/valid/);
 });
+
+test('all-date application queries retain admin and bidder access restrictions without a creation-date filter',async()=>{
+ let where;
+ const service=new ApplicationsService({user:{findMany:async()=>[{id:'managed-bidder'}]},application:{findMany:async args=>{where=args.where;return[];}}},{},{},{});
+ await service.findAll({id:'admin',role:'ADMIN'},{status:'APPLIED'});
+ assert.equal(where.createdAt,undefined);assert.equal(where.status,'APPLIED');assert.deepEqual(where.bidderId,{in:['admin','managed-bidder']});
+ assert.deepEqual(where.profile.OR,[{ownerId:'admin'},{assignments:{some:{userId:'admin',activeTo:null,grantedByMaster:true}}}]);
+ await service.findAll({id:'bidder',role:'BIDDER'},{});
+ assert.equal(where.createdAt,undefined);assert.equal(where.bidderId,'bidder');assert.deepEqual(where.profile,{assignments:{some:{userId:'bidder',activeTo:null}}});
+});
 test('profile duplicate filtering excludes the union of own applications and marks only',async()=>{
  const calls=[];const service=new JobPoolService({profile:{findMany:async args=>{calls.push(args);return[{id:'p1'},{id:'p2'}];}},application:{findMany:async args=>{calls.push(args);return[{company:' A C M E '}];}},jobPoolApplied:{findMany:async args=>{calls.push(args);return[{job:{companyKey:'secondcompany'}}];}}},{});
  const where=await service.companyFilters({id:'owner',role:'BIDDER'},{excludeProfileIds:'p1,p2,p1'},new Date());

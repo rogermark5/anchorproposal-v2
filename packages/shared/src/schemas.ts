@@ -59,6 +59,9 @@ export const promptCertificateSchema = z
     date: z.string().nullish(),
     dates: z.string().nullish(),
     issueDate: z.string().nullish(),
+    expirationDate: z.string().nullish(),
+    startDate: z.string().nullish(),
+    endDate: z.string().nullish(),
   })
   .passthrough();
 
@@ -241,13 +244,27 @@ export function formatEducationLine(
   return `${degree}${institution ? ` — ${institution}` : ''}${dates ? ` (${dates})` : ''}`.trim();
 }
 
+/** Preserve saved certificate endpoints without inventing an expiration date. */
+export function certificateDates(
+  cert: Record<string, unknown> | z.infer<typeof promptCertificateSchema>,
+): string {
+  const c = cert as Record<string, unknown>;
+  const start = firstPlain(c, ['issueDate', 'startDate']);
+  const end = firstPlain(c, ['expirationDate', 'endDate']);
+  const stored = firstPlain(c, ['date', 'dates']);
+  if (start) return [start, end].filter(Boolean).join(' - ');
+  if (!end) return stored;
+  if (!stored || stored === end || [' - ', ' – ', ' — '].some(separator => stored.endsWith(separator + end))) return stored || end;
+  return `${stored} - ${end}`;
+}
+
 export function formatCertificateLine(
   cert: Record<string, unknown> | z.infer<typeof promptCertificateSchema>,
 ): string {
   const c = cert as Record<string, unknown>;
   const name = firstPlain(c, ['name', 'title']);
   const issuer = firstPlain(c, ['issuer', 'organization', 'org']);
-  const date = firstPlain(c, ['date', 'dates', 'issueDate']);
+  const date = certificateDates(c);
   return `${name}${issuer ? ` — ${issuer}` : ''}${date ? ` (${date})` : ''}`.trim();
 }
 

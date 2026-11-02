@@ -54,6 +54,7 @@ function apiRequest(route, method = 'GET') {
     [/^\/dashboard\/metrics$/, ['GET']], [/^\/(audit|job-pool)$/, ['GET']],
     [/^\/job-pool$/, ['POST']],
     [/^\/job-pool\/manage$/, ['GET', 'PATCH']],
+    [/^\/job-pool\/jobright-bot$/, ['GET', 'PATCH']], [/^\/job-pool\/jobright-bot\/(key|command)$/, ['POST']],
     [/^\/job-pool\/sources$/, ['POST']],
     [/^\/job-pool\/sources\/[\w-]+$/, ['PATCH']],
     [/^\/job-pool\/sync$/, ['POST']],
