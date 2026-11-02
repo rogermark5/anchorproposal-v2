@@ -1,6 +1,7 @@
 'use client';
 
 import type { DocumentEdits, ResumeDocument } from '@/lib/api';
+import { certificateDates } from '@anchorproposal/shared';
 
 const text = (value: unknown) => typeof value === 'string' ? value : '';
 export function editableDocument(content: ResumeDocument): DocumentEdits {
@@ -9,7 +10,7 @@ export function editableDocument(content: ResumeDocument): DocumentEdits {
     skills: content.skills.flatMap(row => Object.entries(row).map(([category, skills]) => ({ [category]: skills }))),
     experiences: content.experiences.map(row => ({ title: text(row.title || row.role || row.position), bullets: Array.isArray(row.bullets) ? row.bullets.map(String) : [] })),
     educations: content.educations.map(row => ({ degree: text(row.degree || row.major), institution: text(row.institution || row.school), dates: text(row.dates) || [row.startDate, row.endDate].filter(Boolean).join(' – ') })),
-    certificates: content.certificates.map(row => ({ name: text(row.name || row.title), issuer: text(row.issuer || row.organization), date: text(row.date || row.issueDate) })),
+    certificates: content.certificates.map(row => ({ name: text(row.name || row.title), issuer: text(row.issuer || row.organization), date: certificateDates(row) })),
     projects:(content.projects||[]).map(row=>({name:text(row.name),description:text(row.description),technologies:text(row.technologies),url:text(row.url),dates:text(row.dates),bullets:Array.isArray(row.bullets)?row.bullets.map(String):[]})),
     headline:content.headline||'',coreExpertise:[...(content.coreExpertise||[])],
     ...(content.coverLetter ? { coverLetter: { greeting: content.coverLetter.greeting, paragraphs: [...content.coverLetter.paragraphs], closing: content.coverLetter.closing } } : {}),

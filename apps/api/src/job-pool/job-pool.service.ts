@@ -18,6 +18,7 @@ import { PUBLIC_CAREER_PROVIDERS, validCareerBoard } from './public-career-feeds
 import { HIMALAYAS_MAX_PAGES, HIMALAYAS_SEARCHES } from './himalayas-feed';
 import { CompanyDiscoveryService } from './company-discovery.service';
 import { companyKey } from './company-discovery';
+import { JobrightJob, jobrightAfterStart, jobrightOriginalUrl } from '@anchorproposal/shared';
 import { isFreshPoolPosting, POOL_MAX_POSTING_AGE_MS, poolImportTimeZone, poolPostingWindow } from './job-freshness';
 import { REMOTE_FIRST_CATEGORIES, USEFUL_FREE_FEEDS } from './public-rss-feeds';
 
@@ -147,8 +148,8 @@ export class JobPoolService implements OnApplicationBootstrap, OnModuleDestroy {
     const sourceStats = { totalSources: sources.length, enabledSources: active.length, checkedSources: active.filter(source => !!source.lastAttemptAt).length,
       matchingSources: active.filter(source => source.lastCount > 0).length, pendingSources: active.filter(source => !source.lastAttemptAt).length,
       runningSources, retrySources: active.filter(source => !!source.lastError).length, importing: runningSources > 0 || sources.some(source => source.queued) };
-    return { settings, coverage, sourceStats, discovery: await this.discovery?.summary(), sourceTarget: 30_000, providers: JOB_PROVIDERS.map(provider => ({ ...provider, configured: this.configured(provider.id) })),
-      ...(!summary ? { sources: sources.map(({ lockedUntil, ...source }) => ({ ...source, running: !!lockedUntil && lockedUntil > now, configured: this.configured(source.provider),
+    return { settings, coverage, sourceStats, discovery: await this.discovery?.summary(), sourceTarget: 30_000, providers: JOB_PROVIDERS.filter(provider => provider.id !== 'jobright').map(provider => ({ ...provider, configured: this.configured(provider.id) })),
+      ...(!summary ? { sources: sources.filter(source => source.provider !== 'jobright').map(({ lockedUntil, ...source }) => ({ ...source, running: !!lockedUntil && lockedUntil > now, configured: this.configured(source.provider),
         nextManualSyncAt: source.lastAttemptAt ? new Date(source.lastAttemptAt.getTime() + minimumSyncMs(source)) : null })) } : {}) };
   }
   async updateSettings(user: AuthUser, body: Record<string, unknown>) {
@@ -182,6 +183,7 @@ export class JobPoolService implements OnApplicationBootstrap, OnModuleDestroy {
   }
   async addSource(user: AuthUser, body: Record<string, unknown>) {
     this.master(user);
+    if (body.provider === 'jobright') throw new BadRequestException('Configure Jobright in the browser bot panel.');
     const provider = JOB_PROVIDERS.find(item => item.id === body.provider);
     if (!provider) throw new BadRequestException('Choose a supported free source.');
     const boardToken = provider.board && typeof body.boardToken === 'string' ? body.boardToken.trim() : '';
@@ -204,6 +206,7 @@ export class JobPoolService implements OnApplicationBootstrap, OnModuleDestroy {
     if (typeof body.enabled !== 'boolean') throw new BadRequestException('Choose whether this source is enabled.');
     const source = await this.prisma.jobPoolSource.findUnique({ where: { id } });
     if (!source) throw new NotFoundException('Source not found.');
+    if (source.provider === 'jobright') throw new BadRequestException('Use the Jobright bot panel to start or stop this source.');
     return this.prisma.jobPoolSource.update({ where: { id }, data: { enabled: body.enabled, ...(!body.enabled ? { queued: false } : {}) } });
   }
   async sync(user: AuthUser, body: Record<string, unknown>) {
@@ -559,6 +562,31 @@ export class JobPoolService implements OnApplicationBootstrap, OnModuleDestroy {
     try { return await this.prisma.$transaction(async tx => { const job = await tx.jobPoolJob.create({ data: { externalId: canonicalUrl, canonicalUrl, title, company, location, eligibleCountries: countries, description, jobUrl,
       sourceName: 'Added by Master', publishedAt: new Date(), postedAt: new Date(), isSoftware: true, expiresAt, workArrangement: 'REMOTE' } }); return this.tagAddition(tx, job.id); }); }
     catch (error) { if ((error as { code?: string }).code === 'P2002') throw new BadRequestException('This job link is already in the Job Pool.'); throw error; }
+  }
+  /** Separate ingestion policy: source posting time must follow this bot run's start. */
+  async importJobrightJob(body: JobrightJob, startedAt: string) {
+    if (!jobrightAfterStart(body.publishedAt, startedAt) || Date.parse(body.publishedAt) < Date.now() - POOL_MAX_POSTING_AGE_MS) return { status: 'skipped', reason: 'Posting time is outside this bot run' };
+    const title = plainText(body.title, 250), company = plainText(body.company, 250), location = plainText(body.location, 1000), description = plainText(body.description, 30000);
+    const jobUrl = jobrightOriginalUrl(body.originalUrl), countries = eligibleCountries(location, body.country, description);
+    if (!title || !company || !description || !jobUrl || !countries.length) return { status: 'skipped', reason: 'Missing job details, original URL or supported country' };
+    if (body.workArrangement !== 'REMOTE') return { status: 'skipped', reason: 'The job pool accepts remote jobs' };
+    const { excludedTitleKeywords } = await this.settings();
+    if (isBlockedPoolTitle(title, excludedTitleKeywords) || !isSoftwareJob(title, description, excludedTitleKeywords)) return { status: 'skipped', reason: 'Excluded title or non-software role' };
+    const canonicalUrl = normalizedJobUrl(jobUrl)!;
+    const existing = await this.prisma.jobPoolJob.findUnique({ where: { canonicalUrl }, select: { id: true } });
+    if (existing) return { status: 'duplicate', id: existing.id };
+    // This disabled source is managed by the browser worker, never by the feed importer.
+    const source = await this.prisma.jobPoolSource.upsert({ where: { provider_boardToken: { provider: 'jobright', boardToken: 'browser-bot' } },
+      create: { provider: 'jobright', boardToken: 'browser-bot', name: 'Jobright browser bot', enabled: false }, update: { enabled: false } });
+    try {
+      const job = await this.prisma.$transaction(async tx => {
+        const row = await tx.jobPoolJob.create({ data: { sourceId: source.id, externalId: body.externalId, canonicalUrl, jobUrl, title, company, location,
+          description, eligibleCountries: countries, isSoftware: true, workArrangement: 'REMOTE', sourceName: 'Jobright', publishedAt: new Date(body.publishedAt),
+          salary: plainText(body.salary, 250) || null, employmentType: plainText(body.employmentType, 100) || null } });
+        return this.tagAddition(tx, row.id);
+      });
+      return { status: 'imported', id: job.id };
+    } catch (error) { if ((error as { code?: string }).code === 'P2002') return { status: 'duplicate' }; throw error; }
   }
   async hide(user: AuthUser, id: string, body: Record<string, unknown>) {
     this.master(user); if (typeof body.hidden !== 'boolean') throw new BadRequestException('Choose whether to hide this job.');

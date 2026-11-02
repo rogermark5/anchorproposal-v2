@@ -1,0 +1,7 @@
+{
+  "name": "@anchorproposal/jobright-bot",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": { "start": "node src/main.cjs", "test": "node --test test/*.test.cjs" },
+  "dependencies": { "@anchorproposal/shared": "workspace:*", "puppeteer": "^23.11.1", "dotenv": "^16.4.7" }
+}

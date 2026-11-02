@@ -10,6 +10,7 @@ import { parsePublicRssResponse, publicRssUrl, isRemoteFirstJobUrl, REMOTE_FIRST
 import { ADDITIONAL_FREE_PROVIDERS, ADDITIONAL_FREE_IDS, readAdditionalFreePage } from './additional-free-feeds';
 
 export const JOB_PROVIDERS = [
+  { id: 'jobright', name: 'Jobright bot', board: false, docs: 'https://jobright.ai/jobs/' },
   ...ADDITIONAL_FREE_PROVIDERS,
   { id: 'remotefirst', name: 'Remote First Jobs', board: true, choices: REMOTE_FIRST_CATEGORIES, docs: 'https://remotefirstjobs.com/rss' },
   { id: 'wwr', name: 'We Work Remotely', board: false, docs: 'https://weworkremotely.com/remote-job-rss-feed' },

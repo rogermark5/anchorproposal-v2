@@ -361,7 +361,8 @@ function ApplicationsPageInner() {
         ? 'all'
         : 'mine';
   const showBidderCol = isTrueAdmin && (appsTab === 'team' || appsTab === 'all');
-  const showDateNav = true;
+  const dateFilterActive = appsTab !== 'all';
+  const showDateNav = dateFilterActive;
   const { timeZone } = useTimeZone();
   const colCount = BASE_COL_COUNT + (showBidderCol ? 1 : 0);
 
@@ -511,13 +512,15 @@ function ApplicationsPageInner() {
   );
 
   const buildListParams = useCallback(() => {
-    const params: Record<string, string> = { from: dateRange.from, to: dateRange.to, timeZone };
+    const params: Record<string, string> = dateFilterActive
+      ? { from: dateRange.from, to: dateRange.to, timeZone }
+      : {};
     if (statusFilter) params.status = statusFilter;
     if (isTrueAdmin && (appsTab === 'mine' || appsTab === 'team')) {
       params.scope = appsTab;
     }
     return params;
-  }, [statusFilter, isTrueAdmin, appsTab, dateRange.from, dateRange.to, timeZone]);
+  }, [statusFilter, isTrueAdmin, appsTab, dateFilterActive, dateRange.from, dateRange.to, timeZone]);
 
   const listRequest = useRef(0);
   const load = useCallback(async () => {
@@ -558,13 +561,13 @@ function ApplicationsPageInner() {
     setSelectedIds(new Set());
   }, [search, statusFilter, dateRange.from, dateRange.to, appsTab]);
 
-  const dateFilterActive = true;
-
   const filteredApps = useMemo(() => {
     const q = search.trim().toLowerCase();
     return apps.filter((app) => {
-      const day = calendarDay(app.createdAt, timeZone);
-      if (day < dateRange.from || day > dateRange.to) return false;
+      if (dateFilterActive) {
+        const day = calendarDay(app.createdAt, timeZone);
+        if (day < dateRange.from || day > dateRange.to) return false;
+      }
       if (!q) return true;
       const profileName = `${app.profile?.firstName || ''} ${app.profile?.lastName || ''}`.toLowerCase();
       const bidderName = `${app.bidder?.firstName || ''} ${app.bidder?.lastName || ''}`.toLowerCase();
@@ -577,7 +580,7 @@ function ApplicationsPageInner() {
         bidderName.includes(q)
       );
     });
-  }, [apps, search, dateRange.from, dateRange.to, timeZone]);
+  }, [apps, search, dateFilterActive, dateRange.from, dateRange.to, timeZone]);
 
   const totalPages = Math.max(1, Math.ceil(filteredApps.length / PAGE_SIZE));
   const currentPage = Math.min(page, totalPages);

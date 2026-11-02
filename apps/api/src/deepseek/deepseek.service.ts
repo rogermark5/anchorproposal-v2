@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import {
   generationOutputSchema,
+  certificateDates,
   plainText,
   plainTextList,
   normalizeAiText,
@@ -881,10 +882,7 @@ export class DeepseekService {
       plainText(row.issuer) ||
       plainText(row.organization) ||
       plainText(row.org);
-    const date =
-      plainText(row.date) ||
-      plainText(row.dates) ||
-      plainText(row.issueDate);
+    const date = certificateDates(row);
     const out: Record<string, unknown> = {};
     if (name) out.name = name;
     if (issuer) out.issuer = issuer;

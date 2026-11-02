@@ -177,6 +177,18 @@ importers:
         specifier: ^5.7.2
         version: 5.9.3
 
+  apps/jobright-bot:
+    dependencies:
+      '@anchorproposal/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
+      dotenv:
+        specifier: ^16.4.7
+        version: 16.6.1
+      puppeteer:
+        specifier: ^23.11.1
+        version: 23.11.1(supports-color@8.1.1)(typescript@5.9.3)
+
   apps/web:
     dependencies:
       '@anchorproposal/shared':

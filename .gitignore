@@ -25,6 +25,8 @@ config.bat
 /tmp/functional-qa/
 /tmp/job-pool-qa/
 /tmp/font-qa/
+/tmp/jobright-qa/
+/apps/jobright-bot/.data/
 
 # Local credentials
 .env
