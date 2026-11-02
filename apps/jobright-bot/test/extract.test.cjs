@@ -1,7 +1,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const rules = require('@anchorproposal/shared');
-const { fromHtml, fromPayload, originalFrom, mergeCandidates } = require('../src/extract.cjs');
+const { fromHtml, fromPayload, listingFromPayload, originalFrom, mergeCandidates } = require('../src/extract.cjs');
 const { BotApi } = require('../src/api.cjs');
 
 const row = (changes = {}) => ({ jobResult: { jobId: 'abc123', jobTitle: 'Software Engineer', jobLocation: 'Remote, United States',
@@ -24,8 +24,18 @@ test('original links, domain boundaries and decoded URL words are enforced', () 
   for (const value of ['https://jobright.ai/jobs/info/123', 'https://www.jobright.ai./jobs/1', 'file:///secret', 'https://127.0.0.1/jobs', 'https://user:pass@example.com/jobs', 'https://example.local/job']) assert.equal(rules.jobrightOriginalUrl(value), null);
   const employer = 'https://jobs.lever.co/example/123';
   assert.equal(rules.jobrightOriginalUrl('https://jobright.ai/jobs/external?url=' + encodeURIComponent(employer)), employer);
-  assert.equal(rules.jobrightSearchUrl('https://jobright.ai/jobs/software-engineer-jobs-in-united-states'), rules.JOBRIGHT_DEFAULT_PAGES[0]);
-  for (const value of ['https://evil.com/jobs/search', 'https://jobright.ai/api/jobs', 'https://jobright.ai/jobs/recommend']) assert.equal(rules.jobrightSearchUrl(value), null);
+  assert.equal(rules.JOBRIGHT_JOBS_URL, 'https://jobright.ai/jobs/recommend');
+  const recommended = 'https://jobright.ai/jobs/recommend?visit=software-engineer-jobs-in-united-states';
+  assert.equal(rules.jobrightSearchUrl(recommended), recommended);
+  for (const value of ['https://evil.com/jobs/search', 'https://jobright.ai/api/jobs', 'https://jobright.ai/jobs/liked', 'https://jobright.ai/jobs/applied', 'https://jobright.ai/jobs/profile']) assert.equal(rules.jobrightSearchUrl(value), null);
+});
+test('fresh listing responses are distinguished from detail and empty list responses', () => {
+  assert.equal(listingFromPayload({ data: row() }), null);
+  assert.deepEqual(listingFromPayload({ data: { jobList: [] } }), []);
+  assert.equal(listingFromPayload({ data: { jobList: [row()] } })[0].externalId, 'abc123');
+  assert.equal(listingFromPayload({ data: { jobs: [row()] } })[0].externalId, 'abc123');
+  assert.deepEqual(fromPayload({ data: { jobList: [row()] } }, 'abc123'), [], 'Recommendation cards on a detail page are not job details');
+  assert.equal(fromPayload({ data: { dataSource: row() } }, 'abc123')[0].externalId, 'abc123');
 });
 test('anonymous Jobright payloads never become original links or company homepages', () => {
   const html = '<script id="__NEXT_DATA__" type="application/json">' + JSON.stringify({ props: { pageProps: { logined: false, jobList: [row()] } } }) + '</script>';

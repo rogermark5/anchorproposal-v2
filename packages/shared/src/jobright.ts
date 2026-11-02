@@ -1,12 +1,14 @@
-export const JOBRIGHT_DEFAULT_PAGES = ['https://jobright.ai/jobs/software-engineer-jobs-in-united-states'];
+export const JOBRIGHT_JOBS_URL = 'https://jobright.ai/jobs/recommend';
 export type JobrightRules = { blockedDomains: string[]; blockedWords: string[] };
-export type JobrightSettings = JobrightRules & { searchUrls: string[]; intervalMinutes: number; maxJobsPerScan: number };
+export type JobrightSettings = JobrightRules & { intervalMinutes: number; maxJobsPerScan: number };
+export type JobrightCheckpoint = { externalId: string; sourceUrl: string; publishedAt: string; title: string; company: string };
 export type JobrightJob = { externalId: string; sourceUrl: string; originalUrl: string; title: string; company: string; location: string;
   description: string; publishedAt: string; workArrangement: 'REMOTE' | 'HYBRID' | 'ONSITE' | 'UNKNOWN'; country?: string; salary?: string; employmentType?: string };
 export type JobrightStatus = {
   settings: JobrightSettings; desired: 'stopped' | 'running' | 'login'; runId: string | null; startedAt: string | null;
   authenticated: boolean; keyConfigured: boolean; connected: boolean; workerStatus: string; browserMode: string;
   heartbeatAt: string | null; lastScanAt: string | null; lastError: string | null; loginFinishRequested: boolean;
+  browserVisible: boolean; checkpoint: JobrightCheckpoint | null;
   counts: { scanned: number; imported: number; duplicates: number; skipped: number };
   recent: { at: string; message: string }[];
 };
@@ -25,7 +27,7 @@ export function jobrightSearchUrl(value: unknown): string | null {
   const valid = jobrightPublicUrl(value); if (!valid) return null;
   const url = new URL(valid);
   if (url.protocol !== 'https:' || !['jobright.ai', 'www.jobright.ai'].includes(url.hostname) ||
-    !/^\/jobs\//.test(url.pathname) || /%2f|%5c/i.test(url.pathname) || /^\/jobs\/(?:recommend|liked|applied|profile|resume|external)(?:\/|$)/.test(url.pathname)) return null;
+    !/^\/jobs\//.test(url.pathname) || /%2f|%5c/i.test(url.pathname) || /^\/jobs\/(?:liked|applied|profile|resume|external)(?:\/|$)/.test(url.pathname)) return null;
   url.hash = ''; return url.toString();
 }
 export function normalizeJobrightRules(domains: unknown, words: unknown): JobrightRules {

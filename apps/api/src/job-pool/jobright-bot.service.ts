@@ -1,6 +1,6 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, UnauthorizedException } from '@nestjs/common';
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
-import { JOBRIGHT_DEFAULT_PAGES, JobrightJob, JobrightSettings, JobrightStatus, jobrightAfterStart, jobrightLinkExclusion,
+import { JobrightJob, JobrightSettings, JobrightStatus, jobrightAfterStart, jobrightLinkExclusion,
   jobrightOriginalUrl, jobrightSearchUrl, normalizeJobrightRules } from '@anchorproposal/shared';
 import { AuthUser } from '../common/types/auth.types';
 import { PrismaService } from '../prisma/prisma.service';
@@ -9,10 +9,10 @@ import { JobPoolService } from './job-pool.service';
 const KEY = 'jobright_browser_bot:v1', LEASE_MS = 90_000;
 type State = Omit<JobrightStatus, 'connected' | 'keyConfigured'> & { keyHash: string | null; keyOwnerId: string | null;
   instanceId: string | null; resumeAfterLogin: boolean; workerScanned: number; workerSkipped: number };
-const defaults = (): State => ({ settings: { searchUrls: [...JOBRIGHT_DEFAULT_PAGES], blockedDomains: [], blockedWords: [], intervalMinutes: 5, maxJobsPerScan: 40 },
+const defaults = (): State => ({ settings: { blockedDomains: [], blockedWords: [], intervalMinutes: 5, maxJobsPerScan: 40 },
   desired: 'stopped', runId: null, startedAt: null, authenticated: false, keyHash: null, keyOwnerId: null, instanceId: null,
   resumeAfterLogin: false, workerStatus: 'stopped', browserMode: 'closed', heartbeatAt: null, lastScanAt: null, lastError: null,
-  loginFinishRequested: false, counts: { scanned: 0, imported: 0, duplicates: 0, skipped: 0 }, workerScanned: 0, workerSkipped: 0, recent: [] });
+  loginFinishRequested: false, browserVisible: false, checkpoint: null, counts: { scanned: 0, imported: 0, duplicates: 0, skipped: 0 }, workerScanned: 0, workerSkipped: 0, recent: [] });
 const hash = (key: string) => createHash('sha256').update(key).digest('hex');
 const safeMessage = (value: unknown) => typeof value === 'string' ? value.replace(/Bearer\s+\S+/gi, 'Bearer [hidden]').replace(/https?:\/\/\S+/g, text => {
   try { const url = new URL(text); return url.origin + url.pathname; } catch { return '[URL]'; }
@@ -22,7 +22,12 @@ const safeMessage = (value: unknown) => typeof value === 'string' ? value.replac
 export class JobrightBotService {
   constructor(private prisma: PrismaService, private pool: JobPoolService) {}
   private master(user: AuthUser) { if (user.role !== 'MASTER') throw new ForbiddenException('Only Master can manage the Jobright bot.'); }
-  private parse(value?: string): State { return value ? { ...defaults(), ...JSON.parse(value) } : defaults(); }
+  private parse(value?: string): State {
+    const state = value ? { ...defaults(), ...JSON.parse(value) } as State : defaults();
+    // Upgrade existing saved settings without retaining the removed URL input.
+    const { blockedDomains, blockedWords, intervalMinutes, maxJobsPerScan } = { ...defaults().settings, ...state.settings };
+    state.settings = { blockedDomains, blockedWords, intervalMinutes, maxJobsPerScan }; return state;
+  }
   private async read() { const row = await this.prisma.systemSetting.findUnique({ where: { key: KEY } }); return this.parse(row?.value); }
   private note(state: State, message: string) { state.recent = [{ at: new Date().toISOString(), message: safeMessage(message) }, ...state.recent].slice(0, 15); }
   private async mutate<T>(fn: (state: State) => Promise<T> | T): Promise<T> {
@@ -41,13 +46,11 @@ export class JobrightBotService {
   async settings(user: AuthUser, body: Record<string, unknown>) {
     this.master(user); let settings: JobrightSettings;
     try {
-      if (!Array.isArray(body.searchUrls) || !body.searchUrls.length || body.searchUrls.length > 10) throw Error('Enter 1–10 Jobright job search pages.');
-      const urls = body.searchUrls.map(jobrightSearchUrl); if (urls.some(url => !url)) throw Error('Use public https://jobright.ai/jobs/ search pages.');
       if (!Number.isInteger(body.intervalMinutes) || Number(body.intervalMinutes) < 2 || Number(body.intervalMinutes) > 60) throw Error('Choose an interval from 2 to 60 minutes.');
       if (!Number.isInteger(body.maxJobsPerScan) || Number(body.maxJobsPerScan) < 1 || Number(body.maxJobsPerScan) > 100) throw Error('Choose 1–100 jobs per scan.');
-      settings = { ...normalizeJobrightRules(body.blockedDomains, body.blockedWords), searchUrls: [...new Set(urls as string[])], intervalMinutes: Number(body.intervalMinutes), maxJobsPerScan: Number(body.maxJobsPerScan) };
+      settings = { ...normalizeJobrightRules(body.blockedDomains, body.blockedWords), intervalMinutes: Number(body.intervalMinutes), maxJobsPerScan: Number(body.maxJobsPerScan) };
     } catch (error) { throw new BadRequestException((error as Error).message); }
-    return this.mutate(state => { state.settings = settings; this.note(state, 'Jobright search pages and exclusions saved.'); return this.publicState(state); });
+    return this.mutate(state => { state.settings = settings; this.note(state, 'Jobright exclusions and scan settings saved.'); return this.publicState(state); });
   }
   async rotateKey(user: AuthUser) {
     this.master(user); const key = 'jrbot_' + randomBytes(32).toString('hex');
@@ -57,20 +60,26 @@ export class JobrightBotService {
   }
   async command(user: AuthUser, action: unknown) {
     this.master(user);
-    if (!['start', 'stop', 'login', 'finish-login'].includes(action as string)) throw new BadRequestException('Choose a supported bot action.');
+    if (!['start', 'stop', 'login', 'finish-login', 'show-browser', 'hide-browser'].includes(action as string)) throw new BadRequestException('Choose a supported bot action.');
     return this.mutate(state => {
       if (!state.keyHash) throw new BadRequestException('Generate and configure the worker key first.');
       if (action === 'start') {
-        if (state.desired === 'running') return this.publicState(state);
+        if (state.desired === 'running' || state.desired === 'login' && state.resumeAfterLogin) return this.publicState(state);
         state.runId = randomUUID(); state.startedAt = new Date().toISOString(); state.desired = 'running'; state.lastError = null;
+        state.checkpoint = null;
         state.counts = { scanned: 0, imported: 0, duplicates: 0, skipped: 0 }; state.workerScanned = 0; state.workerSkipped = 0;
         this.note(state, 'Watching only jobs posted after this start time.');
       } else if (action === 'login') {
         if (state.desired !== 'login') state.resumeAfterLogin = state.desired === 'running';
-        state.desired = 'login'; state.loginFinishRequested = false; state.lastError = null; this.note(state, 'Opening sign-in on the Ubuntu desktop.');
+        state.desired = 'login'; state.browserVisible = true; state.loginFinishRequested = false; state.lastError = null; this.note(state, 'Opening sign-in on the Ubuntu desktop.');
+      } else if (action === 'show-browser') {
+        state.browserVisible = true; this.note(state, 'Showing Chrome on Ubuntu. Collection pauses while you change filters.');
+      } else if (action === 'hide-browser') {
+        state.browserVisible = false; state.loginFinishRequested = true;
+        this.note(state, 'Hiding Chrome. The same search page and filters will be used for collection.');
       } else if (action === 'finish-login') {
         if (state.desired !== 'login') throw new BadRequestException('Open the login window first.');
-        state.loginFinishRequested = true;
+        state.loginFinishRequested = true; state.browserVisible = false;
       } else { state.desired = 'stopped'; state.resumeAfterLogin = false; state.loginFinishRequested = false; this.note(state, 'Bot stopped.'); }
       return this.publicState(state);
     });
@@ -94,34 +103,47 @@ export class JobrightBotService {
   }
   async workerConfig(digest: string, instanceId: unknown) {
     return this.mutate(state => { this.lease(state, digest, instanceId, true); return { settings: state.settings, desired: state.desired, runId: state.runId,
-      startedAt: state.startedAt, authenticated: state.authenticated, loginFinishRequested: state.loginFinishRequested, counts: state.counts }; });
+      startedAt: state.startedAt, authenticated: state.authenticated, loginFinishRequested: state.loginFinishRequested,
+      browserVisible: state.browserVisible, checkpoint: state.checkpoint, counts: state.counts }; });
   }
   async heartbeat(digest: string, body: Record<string, unknown>) {
     return this.mutate(state => {
       this.lease(state, digest, body.instanceId);
-      if (['starting', 'ready', 'watching', 'scanning', 'login_required', 'blocked', 'stopped', 'error'].includes(body.status as string)) state.workerStatus = body.status as string;
+      if (['starting', 'ready', 'watching', 'scanning', 'browser_open', 'login_required', 'blocked', 'stopped', 'error'].includes(body.status as string)) state.workerStatus = body.status as string;
       if (['visible', 'hidden', 'closed'].includes(body.browserMode as string)) state.browserMode = body.browserMode as string;
       if (typeof body.authenticated === 'boolean') state.authenticated = body.authenticated;
       if (body.error !== undefined) state.lastError = safeMessage(body.error) || null;
-      if (body.scanCompleted === true && body.runId === state.runId) state.lastScanAt = new Date().toISOString();
+      if (body.scanCompleted === true && body.runId === state.runId && state.desired === 'running' && !state.browserVisible) {
+        state.lastScanAt = new Date().toISOString();
+        if (body.checkpoint && typeof body.checkpoint === 'object') {
+          const mark = body.checkpoint as Record<string, unknown>;
+          if (typeof mark.externalId !== 'string' || !/^[\w-]{1,100}$/.test(mark.externalId) ||
+            mark.sourceUrl !== 'https://jobright.ai/jobs/info/' + mark.externalId || !jobrightAfterStart(mark.publishedAt, state.startedAt)) throw new BadRequestException('Invalid job checkpoint.');
+          if (!state.checkpoint || Date.parse(mark.publishedAt as string) >= Date.parse(state.checkpoint.publishedAt)) state.checkpoint = {
+            externalId: mark.externalId, sourceUrl: mark.sourceUrl as string, publishedAt: mark.publishedAt as string,
+            title: safeMessage(mark.title).slice(0, 250), company: safeMessage(mark.company).slice(0, 250),
+          };
+        }
+      }
       if (body.runId === state.runId) for (const [key, stored] of [['scanned', 'workerScanned'], ['skipped', 'workerSkipped']] as const) {
         const count = Number(body[key]); if (Number.isSafeInteger(count) && count >= 0 && count <= 10_000_000) {
           state.counts[key] += Math.max(0, count - state[stored]); state[stored] = Math.max(count, state[stored]);
         }
       }
-      if (state.desired === 'login' && body.loginCompleted === true && body.authenticated === true) {
-        state.desired = state.resumeAfterLogin && !!state.runId ? 'running' : 'stopped'; state.resumeAfterLogin = false;
+      if (!state.browserVisible && body.loginCompleted === true && body.authenticated === true) {
+        if (state.desired === 'login') state.desired = state.resumeAfterLogin && !!state.runId ? 'running' : 'stopped';
+        state.resumeAfterLogin = false;
         state.loginFinishRequested = false; state.lastError = null; this.note(state, 'Login session saved. Chrome will continue hidden.');
       }
       if (body.release === true) { state.instanceId = null; state.workerStatus = 'stopped'; state.browserMode = 'closed'; }
-      return { desired: state.desired, runId: state.runId };
+      return { desired: state.desired, browserVisible: state.browserVisible, runId: state.runId };
     });
   }
   async ingest(digest: string, body: Record<string, unknown>) {
     if (!Array.isArray(body.jobs) || !body.jobs.length || body.jobs.length > 10) throw new BadRequestException('Send 1–10 jobs per request.');
     return this.mutate(async state => {
       this.lease(state, digest, body.instanceId);
-      if (state.desired !== 'running' || !state.startedAt || !state.runId || body.runId !== state.runId) throw new ConflictException('This bot run is no longer watching.');
+      if (state.desired !== 'running' || state.browserVisible || !state.startedAt || !state.runId || body.runId !== state.runId) throw new ConflictException('This bot run is paused or no longer watching.');
       const results: { externalId?: string; status: string; reason?: string; id?: string }[] = [];
       for (const value of body.jobs as unknown[]) {
         const job = value as JobrightJob;

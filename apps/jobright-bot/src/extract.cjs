@@ -35,25 +35,40 @@ function mergeCandidates(target, rows) {
   }
   return target;
 }
-function fromPayload(payload) {
+function fromPayload(payload, focusId) {
   const rows = new Map(); let visited = 0;
   function walk(value, depth = 0) {
     if (!value || typeof value !== 'object' || depth > 12 || ++visited > 12000) return;
     if (Array.isArray(value)) { for (const item of value.slice(0, 500)) walk(item, depth + 1); return; }
     const row = value.jobResult ? candidate(value.jobResult, value.companyResult) : candidate(value);
     if (row) mergeCandidates(rows, [row]);
-    for (const [key, child] of Object.entries(value)) if (!['companyResult', 'user', 'profile', 'userProfile', 'resume', 'jobResult'].includes(key)) walk(child, depth + 1);
+    for (const [key, child] of Object.entries(value)) if (!['companyResult', 'user', 'profile', 'userProfile', 'resume', 'jobResult'].includes(key) &&
+      !(focusId && /^(?:jobList|jobs|jobResults|jobResultList|recommend.*|similar.*)$/i.test(key))) walk(child, depth + 1);
   }
-  walk(payload); return [...rows.values()];
+  walk(payload); return [...rows.values()].filter(row => !focusId || row.externalId === focusId);
 }
-function fromHtml(html) {
+/** Distinguish listing responses (including empty lists) from job-detail requests. */
+function listingFromPayload(payload) {
+  const rows = new Map(); let found = false, visited = 0;
+  const walk = (value, key = '', depth = 0) => {
+    if (!value || typeof value !== 'object' || depth > 12 || ++visited > 12000) return;
+    if (Array.isArray(value)) {
+      const jobs = fromPayload(value);
+      if (jobs.length || /^(?:jobList|jobs|jobResults|jobResultList)$/i.test(key)) { found = true; mergeCandidates(rows, jobs); }
+      return;
+    }
+    for (const [name, child] of Object.entries(value)) if (!['user', 'profile', 'userProfile', 'resume', 'companyResult'].includes(name)) walk(child, name, depth + 1);
+  };
+  walk(payload); return found ? [...rows.values()] : null;
+}
+function fromHtml(html, focusId) {
   const rows = new Map();
   const scripts = [...html.matchAll(/<script\b[^>]*(?:id=["']__NEXT_DATA__["']|type=["']application\/ld\+json["'])[^>]*>([\s\S]*?)<\/script>/gi)];
   let authenticated = false;
   for (const script of scripts) try {
     const data = JSON.parse(script[1]); if (data?.props?.pageProps?.logined === true) authenticated = true;
-    mergeCandidates(rows, fromPayload(data));
+    mergeCandidates(rows, fromPayload(data, focusId));
   } catch { /* Unrelated malformed scripts are ignored. */ }
   return { jobs: [...rows.values()], authenticated };
 }
-module.exports = { fromHtml, fromPayload, candidate, originalFrom, mergeCandidates };
+module.exports = { fromHtml, fromPayload, listingFromPayload, candidate, originalFrom, mergeCandidates };
