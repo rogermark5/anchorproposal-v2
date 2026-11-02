@@ -1,6 +1,6 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
-import { Bot, Check, Copy, KeyRound, LogIn, Pause, Play, RefreshCw } from 'lucide-react';
+import { Bot, Check, Copy, Eye, EyeOff, KeyRound, LogIn, Pause, Play, RefreshCw } from 'lucide-react';
 import { JobrightSettings, JobrightStatus, jobrightLinkExclusion, normalizeJobrightRules } from '@anchorproposal/shared';
 import { api } from '@/lib/api';
 import { formatZonedDateTime } from '@/lib/time-zone';
@@ -12,13 +12,13 @@ const lines = (value: string) => value.split(/\r?\n/).map(line => line.trim()).f
 export function JobrightBotSettings() {
   useTimeZone();
   const [status, setStatus] = useState<JobrightStatus | null>(null), [draft, setDraft] = useState<JobrightSettings | null>(null);
-  const [domains, setDomains] = useState(''), [words, setWords] = useState(''), [pages, setPages] = useState(''), [busy, setBusy] = useState(false);
+  const [domains, setDomains] = useState(''), [words, setWords] = useState(''), [busy, setBusy] = useState(false);
   const [error, setError] = useState(''), [notice, setNotice] = useState(''), [key, setKey] = useState(''), [copied, setCopied] = useState(false), [testUrl, setTestUrl] = useState('');
   const [loadError, setLoadError] = useState('');
   const dirty = useRef(false), mounted = useRef(true);
   function adopt(value: JobrightStatus, replace = false) {
     setStatus(value);
-    if (!dirty.current || replace) { setDraft(value.settings); setDomains(value.settings.blockedDomains.join('\n')); setWords(value.settings.blockedWords.join('\n')); setPages(value.settings.searchUrls.join('\n')); dirty.current = false; }
+    if (!dirty.current || replace) { setDraft(value.settings); setDomains(value.settings.blockedDomains.join('\n')); setWords(value.settings.blockedWords.join('\n')); dirty.current = false; }
   }
   useEffect(() => {
     mounted.current = true;
@@ -41,23 +41,25 @@ export function JobrightBotSettings() {
       </span></header>
     <p className="mt-3 rounded-lg bg-sky-50 p-3 text-sm text-sky-900">Only jobs posted <b>after you press Start watching</b> are accepted. Worker or server restarts keep that cutoff. Stopping and starting a new watch sets a new cutoff.</p>
     {status && <>
-      <div className="mt-4 grid gap-3 text-sm sm:grid-cols-3"><div><span className="block text-xs text-slate-500">Watch started</span><b>{status.startedAt ? formatZonedDateTime(status.startedAt) : 'Not started'}</b></div>
-        <div><span className="block text-xs text-slate-500">Browser</span><b>{status.browserMode === 'visible' ? 'Visible on Ubuntu for login' : status.browserMode === 'hidden' ? 'Hidden background browser' : 'Closed'}</b></div>
-        <div><span className="block text-xs text-slate-500">Last scan</span><b>{status.lastScanAt ? formatZonedDateTime(status.lastScanAt) : 'Not scanned yet'}</b></div></div>
+      <div className="mt-4 grid gap-3 text-sm sm:grid-cols-2 xl:grid-cols-4"><div><span className="block text-xs text-slate-500">Watch started</span><b>{status.startedAt ? formatZonedDateTime(status.startedAt) : 'Not started'}</b></div>
+        <div><span className="block text-xs text-slate-500">Browser</span><b>{status.browserMode === 'visible' ? 'Visible on Ubuntu' : status.browserMode === 'hidden' ? 'Hidden background browser' : 'Closed'}</b></div>
+        <div><span className="block text-xs text-slate-500">Last scan</span><b>{status.lastScanAt ? formatZonedDateTime(status.lastScanAt) : 'Not scanned yet'}</b></div>
+        <div><span className="block text-xs text-slate-500">Last saved checkpoint</span>{status.checkpoint ? <><a className="font-semibold text-teal-700 underline" href={status.checkpoint.sourceUrl} target="_blank" rel="noreferrer">{status.checkpoint.company} · {status.checkpoint.title}</a><span className="block text-xs">Posted {formatZonedDateTime(status.checkpoint.publishedAt)}</span></> : <b>No new jobs processed yet</b>}</div></div>
       <div className="mt-4 flex flex-wrap gap-2">
         <button type="button" className={button} disabled={busy || !status.keyConfigured || status.desired === 'running'} onClick={() => void action(() => api.jobrightBotCommand('start'), 'Watch started. Jobs posted before this cutoff will be skipped.')}><Play size={15} />Start watching</button>
         <button type="button" className={button} disabled={busy || status.desired === 'stopped'} onClick={() => void action(() => api.jobrightBotCommand('stop'), 'Stop requested.')}><Pause size={15} />Stop</button>
+        <button type="button" className={button} disabled={busy || !status.keyConfigured || status.browserVisible} onClick={() => void action(() => api.jobrightBotCommand('show-browser'), 'Opening the current Jobright browser on Ubuntu. Collection pauses while you change filters.')}><Eye size={15} />Show browser</button>
+        <button type="button" className={button} disabled={busy || !status.keyConfigured || !status.browserVisible} onClick={() => void action(() => api.jobrightBotCommand('hide-browser'), 'Hiding the same browser. Watching resumes with your filters and saved checkpoint.')}><EyeOff size={15} />Hide browser</button>
         <button type="button" className={button} disabled={busy || !status.keyConfigured} onClick={() => void action(() => api.jobrightBotCommand('login'), 'Sign in using the Chrome window on your Ubuntu desktop.')}><LogIn size={15} />Open login on Ubuntu</button>
         {status.desired === 'login' && <button type="button" className={button} disabled={busy} onClick={() => void action(() => api.jobrightBotCommand('finish-login'), 'Login completion requested. Chrome will close and watching can continue hidden.')}><Check size={15} />Finish login &amp; hide</button>}
       </div>
-      <p className="mt-2 text-xs text-slate-500">Sign in manually on the Ubuntu desktop. The worker hides Chrome after sign-in; if automatic detection misses it, use Finish login &amp; hide. A sign-in or browser challenge pauses collection.</p>
+      <p className="mt-2 text-xs text-slate-500">Show browser opens Chrome on your Ubuntu desktop so you can sign in and change Jobright filters. Hide browser minimizes that same window and resumes collection when watching is on. Your watch cutoff and checkpoint stay unchanged.</p>
       <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">{Object.entries(status.counts).map(([name, count]) => <div key={name} className="rounded-lg bg-slate-50 p-3"><span className="block text-xs capitalize text-slate-500">{name}</span><strong className="text-lg">{count.toLocaleString()}</strong></div>)}</div>
       {status.lastError && <p role="status" className="mt-3 rounded-lg bg-amber-50 p-3 text-sm text-amber-900">{status.lastError}</p>}
     </>}
-    {draft && <details className="mt-5 border-t border-slate-100 pt-4"><summary className="cursor-pointer text-sm font-semibold text-slate-700">Search pages and link exclusions</summary>
-      <form className="mt-4 space-y-4" onSubmit={event => { event.preventDefault(); void action(async () => { const value = await api.saveJobrightBot({ ...draft, searchUrls: lines(pages), blockedDomains: lines(domains), blockedWords: lines(words) }); adopt(value, true); return value; }, 'Bot settings saved.'); }}>
-        <label className="block text-sm font-medium">Jobright search pages<textarea aria-label="Jobright search pages" rows={3} value={pages} onChange={event => { dirty.current = true; setPages(event.target.value); }} className={field} />
-          <span className="mt-1 block text-xs font-normal text-slate-500">One public Jobright job-search URL per line, up to 10. Use search pages sorted by newest. Account, recommended and API URLs are excluded.</span></label>
+    {draft && <details className="mt-5 border-t border-slate-100 pt-4"><summary className="cursor-pointer text-sm font-semibold text-slate-700">Link exclusions and scan settings</summary>
+      <form className="mt-4 space-y-4" onSubmit={event => { event.preventDefault(); void action(async () => { const value = await api.saveJobrightBot({ ...draft, blockedDomains: lines(domains), blockedWords: lines(words) }); adopt(value, true); return value; }, 'Bot settings saved.'); }}>
+        <p className="text-sm text-slate-600">The bot uses Jobright&apos;s Recommended page and selects <b>Most Recent</b> for every scan. Use <b>Show browser</b> to change your other Jobright filters.</p>
         <div className="grid gap-4 md:grid-cols-2"><label className="block text-sm font-medium">Blocked domains<textarea aria-label="Blocked job domains" rows={5} placeholder={'linkedin.com\nexample.com'} value={domains} onChange={event => { dirty.current = true; setDomains(event.target.value); }} className={field} /><span className="mt-1 block text-xs font-normal text-slate-500">One per line. Blocks the domain and its subdomains.</span></label>
           <label className="block text-sm font-medium">Blocked words in job links<textarea aria-label="Blocked words in job links" rows={5} placeholder={'internship\ncontractor'} value={words} onChange={event => { dirty.current = true; setWords(event.target.value); }} className={field} /><span className="mt-1 block text-xs font-normal text-slate-500">Matches text anywhere in the original URL, ignoring case and decoding URL escapes.</span></label></div>
         <div className="grid gap-4 sm:grid-cols-2"><label className="text-sm font-medium">Check every (minutes)<input aria-label="Bot scan interval" type="number" min={2} max={60} value={draft.intervalMinutes} onChange={event => { dirty.current = true; setDraft({ ...draft, intervalMinutes: Number(event.target.value) }); }} className={field} /></label>

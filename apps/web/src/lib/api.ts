@@ -944,7 +944,7 @@ class ApiClient {
   getPoolManagement() { return this.request<PoolManagement>('/job-pool/manage'); }
   getJobrightBot() { return this.request<JobrightStatus>('/job-pool/jobright-bot'); }
   saveJobrightBot(data: JobrightSettings) { return this.request<JobrightStatus>('/job-pool/jobright-bot', { method: 'PATCH', body: JSON.stringify(data) }); }
-  jobrightBotCommand(action: 'start' | 'stop' | 'login' | 'finish-login') { return this.request<JobrightStatus>('/job-pool/jobright-bot/command', { method: 'POST', body: JSON.stringify({ action }) }); }
+  jobrightBotCommand(action: 'start' | 'stop' | 'login' | 'finish-login' | 'show-browser' | 'hide-browser') { return this.request<JobrightStatus>('/job-pool/jobright-bot/command', { method: 'POST', body: JSON.stringify({ action }) }); }
   generateJobrightBotKey() { return this.request<{ key: string; status: JobrightStatus }>('/job-pool/jobright-bot/key', { method: 'POST', body: '{}' }); }
   getPoolSummary() { return this.request<Omit<PoolManagement,'sources'>>('/job-pool/manage?summary=1'); }
   updatePoolSettings(data: Partial<PoolManagement['settings']>) { return this.request<PoolManagement['settings']>('/job-pool/manage', { method: 'PATCH', body: JSON.stringify(data) }); }
